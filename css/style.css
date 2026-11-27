@@ -54,6 +54,9 @@ button, select, input { font: inherit; color: inherit; }
   font-stretch: 68%;
   letter-spacing: -0.01em;
 }
+.masthead-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.repo { font-size: 13px; color: var(--ink); text-underline-offset: 3px; white-space: nowrap; }
+.repo:hover { color: var(--cherry); }
 .masthead p { margin: 8px 0 0; color: var(--ink-2); max-width: 30ch; }
 
 .about { margin: 0 20px 16px; padding-top: 12px; border-top: 1px solid var(--rule); font-size: 13.5px; line-height: 1.45; color: var(--ink-2); }
