@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Swing Lab</title>
+  <meta name="description" content="A cricket ball swing simulator built on boundary-layer aerodynamics.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%239c1a2c'/%3E%3Cpath d='M9 4.5 Q16 16 9 27.5 M13 3 Q20 16 13 29' fill='none' stroke='%23f4f6f0' stroke-width='1.6' stroke-dasharray='2 2'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.min.js",
+      "three/addons/": "./vendor/three/addons/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div class="app">
+    <aside class="panel controls" aria-label="Delivery settings">
+      <header class="masthead">
+        <h1>Swing Lab</h1>
+        <p>Set the seam, the ball and the day. Watch what the air does.</p>
+      </header>
+      <div class="preset-row">
+        <label for="preset">Start from a delivery</label>
+        <select id="preset"></select>
+      </div>
+      <div id="controls"></div>
+      <footer class="panel-foot">
+        <button type="button" class="link" id="open-notes">How the physics works</button>
+        <button type="button" class="link" id="reset">Reset everything</button>
+      </footer>
+    </aside>
+
+    <main class="stage">
+      <canvas id="view" aria-label="3D view of the delivery"></canvas>
+      <div class="stage-top">
+        <div class="cams" role="group" aria-label="Camera">
+          <button type="button" data-cam="broadcast" aria-pressed="true">Broadcast</button>
+          <button type="button" data-cam="umpire">Umpire</button>
+          <button type="button" data-cam="side">Side on</button>
+          <button type="button" data-cam="top">Overhead</button>
+          <button type="button" data-cam="batter">Batter</button>
+          <button type="button" data-cam="ball">Ball cam</button>
+        </div>
+        <div class="live" id="live" aria-live="off"></div>
+      </div>
+      <div class="transport">
+        <button type="button" id="bowl" class="primary">Bowl</button>
+        <label class="rate">
+          <span class="sr">Playback speed</span>
+          <select id="rate">
+            <option value="1">Real time</option>
+            <option value="0.25" selected>1/4 speed</option>
+            <option value="0.1">1/10 speed</option>
+            <option value="0.025">1/40 speed</option>
+          </select>
+        </label>
+        <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position in the flight">
+        <span id="clock" class="clock">0.000 s</span>
+        <label class="check"><input type="checkbox" id="show-ref" checked> No-swing path</label>
+        <button type="button" id="pin" class="ghost">Pin this path</button>
+      </div>
+      <p class="fallback" id="fallback" hidden></p>
+    </main>
+
+    <aside class="panel readout" aria-label="What happened">
+      <section class="verdict" aria-live="polite">
+        <h2 id="verdict-title">Working it out</h2>
+        <p id="verdict-sub"></p>
+      </section>
+      <dl class="stats" id="stats"></dl>
+
+      <section class="card">
+        <h3>The ball right now</h3>
+        <p class="card-note" id="ball-note">Seen from behind, looking along its line of flight.</p>
+        <canvas id="ball-view" width="520" height="360" aria-label="Close view of the ball and its seam"></canvas>
+      </section>
+
+      <section class="card">
+        <h3>Air around the ball, from above</h3>
+        <div id="flow"></div>
+        <ul class="legend">
+          <li><span class="key lam"></span>Smooth (laminar) layer</li>
+          <li><span class="key turb"></span>Turbulent layer</li>
+        </ul>
+        <p class="card-note" id="flow-note"></p>
+      </section>
+
+      <section class="card">
+        <h3>Side force across speeds, for this ball and seam</h3>
+        <div id="curve" class="chart"></div>
+        <p class="card-note" id="curve-note"></p>
+        <details class="numbers">
+          <summary>Show the numbers</summary>
+          <table>
+            <thead><tr><th>km/h</th><th>Side force</th><th>Drag</th></tr></thead>
+            <tbody id="curve-rows"></tbody>
+          </table>
+        </details>
+      </section>
+    </aside>
+  </div>
+
+  <dialog id="notes">
+    <article>
+      <header>
+        <h2>How the physics works</h2>
+        <button type="button" class="link" id="close-notes">Close</button>
+      </header>
+      <p>A cricket ball swings because the thin layer of air hugging its surface lets go of the two sides at different places. Everything here follows from working out where that happens.</p>
+      <h3>The air</h3>
+      <p>The surface is divided into 32 strips running from the nose of the ball to its wake. On each strip the layer starts smooth (laminar). It turns turbulent if the leather is rough enough for the speed, using Achenbach's rough-sphere measurements, or if it crosses the seam fast enough for the stitches to trip it. A laminar layer leaves the ball about 82° round from the nose. A turbulent one clings to roughly 120°, less if it was tripped early, has run over scuffed leather, or was already turbulent when it hit the seam.</p>
+      <p>The pressure those separation lines imply is integrated over the ball to give drag and side force. Conventional swing, reverse swing and contrast swing are not separate rules. They are the same calculation at different speeds and surface conditions.</p>
+      <h3>The flight</h3>
+      <p>The ball is a spinning rigid body. If the seam is not square to the spin axis it wobbles, and the forces are recomputed from where the seam actually is every two milliseconds. Backspin adds Magnus lift. Wind changes the airspeed the ball feels.</p>
+      <h3>The pitch</h3>
+      <p>The bounce is an impulse calculation with friction. A fast ball skids the whole way through contact. A slow one can bite and leave rolling. When the seam is on the ground it resists sliding across itself more than along itself, which is what moves the ball off the seam.</p>
+      <h3>The weather, honestly</h3>
+      <p>Humid air is slightly thinner than dry air, so humidity alone does almost nothing; that matches wind-tunnel work. Temperature and altitude change air density and viscosity, which shifts the speed at which swing reverses. Cloud is modelled the way James, MacDonald and Hart suggested in 2012: sunshine on the outfield stirs up small-scale turbulence that disturbs the laminar side, and cloud calms it. That last effect is a hypothesis, so it is kept small.</p>
+      <h3>What it is calibrated to</h3>
+      <p>Peak side force about 0.3 of the dynamic pressure on the ball's cross-section at around 108 km/h with a 20° seam (Bentley and others 1982, Mehta 2005). A new ball reversing only above roughly 140 km/h. Contrast swing changing direction near 115 km/h. Drag near 0.5 at low speed.</p>
+      <h3>What it leaves out</h3>
+      <p>No batter. No aerodynamic torque on the seam, so the wobble you set is the wobble you get. No moisture on the ball itself. Pitch behaviour is a reasoned mapping from hardness, grass, moisture and wear onto bounce and friction, not a measurement of any particular ground.</p>
+    </article>
+  </dialog>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
