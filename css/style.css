@@ -56,6 +56,34 @@ button, select, input { font: inherit; color: inherit; }
 }
 .masthead p { margin: 8px 0 0; color: var(--ink-2); max-width: 30ch; }
 
+.about { margin: 0 20px 16px; padding-top: 12px; border-top: 1px solid var(--rule); font-size: 13.5px; line-height: 1.45; color: var(--ink-2); }
+.about p { margin: 0 0 8px; text-wrap: pretty; }
+.about summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 4px 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.about summary::-webkit-details-marker { display: none; }
+.about summary::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-right: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  transform: rotate(-45deg);
+  flex: none;
+  translate: 0 -1px;
+}
+.about details[open] > summary::before { transform: rotate(45deg); translate: 0 -3px; }
+.legends { list-style: none; margin: 8px 0 4px; padding: 0; display: grid; gap: 8px; }
+.legends b { display: block; color: var(--ink); font-weight: 700; }
+.legends button.link { font-size: 13px; white-space: nowrap; }
+
 .preset-row { padding: 0 20px 16px; display: grid; gap: 6px; }
 .preset-row label { font-weight: 600; }
 select {
@@ -126,7 +154,7 @@ details.group[open] > summary::before { transform: rotate(45deg); translate: 0 -
   text-align: right;
 }
 .ctl input[type="range"] { grid-column: 1 / -1; }
-.ctl-note { grid-column: 1 / -1; color: var(--ink-3); font-size: 12.5px; min-height: 1.4em; }
+.ctl-note { grid-column: 1 / -1; color: var(--ink-3); font-size: 12.5px; min-height: 1.4em; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 input[type="range"] {
   appearance: none;
@@ -234,7 +262,7 @@ button.primary {
   font-stretch: 82%;
   font-size: 16px;
   cursor: pointer;
-  min-width: 92px;
+  min-width: 124px;
 }
 button.primary:hover { background: var(--cherry-deep); }
 button.ghost {
@@ -258,34 +286,46 @@ button.ghost:hover { background: #fff; }
 .fallback[hidden] { display: none; }
 
 /* ---------------------------------------------------------------- readout */
+/* The readout is sized in units of its own width (--u is 1px at the full 336px
+   column and shrinks with it), and every line of the verdict and the stats is
+   a single unwrapped line. Changing the wording therefore never changes the
+   height of anything, at any column width. */
+.readout { container-type: inline-size; --u: min(1px, calc((100cqw - 40px) / 295)); }
 .verdict { background: var(--ink); color: var(--screen); padding: 20px 20px 18px; }
+.verdict span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.verdict span:empty::before { content: "\00a0"; }
 .verdict h2 {
   margin: 0;
-  font-size: 26px;
-  line-height: 1.08;
+  font-size: calc(26 * var(--u));
+  line-height: 1.14;
   font-weight: 800;
   font-stretch: 72%;
-  text-wrap: balance;
 }
-.verdict p { margin: 8px 0 0; color: #c9d4c9; text-wrap: pretty; }
+#verdict-fate { font-size: calc(21 * var(--u)); line-height: 1.25; color: #e3eadf; }
+.verdict p { margin: 8px 0 0; color: #c9d4c9; font-size: calc(14 * var(--u)); line-height: 1.45; }
 
 .stats { margin: 0; padding: 6px 20px 10px; display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; }
-.stats > div { padding: 10px 0; border-bottom: 1px solid var(--rule); min-width: 0; }
-.stats dt { color: var(--ink-2); font-size: 12.5px; }
+.stats > div { padding: 9px 0; border-bottom: 1px solid var(--rule); min-width: 0; }
+.stats dt, .stats dd, .stats dd small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stats dt { color: var(--ink-2); font-size: calc(12.5 * var(--u)); }
 .stats dd {
   margin: 1px 0 0;
   font-weight: 800;
   font-stretch: 74%;
-  font-size: 21px;
+  font-size: calc(21 * var(--u));
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
-.stats dd small { font-size: 13px; font-weight: 500; font-stretch: 92%; color: var(--ink-2); margin-left: 3px; }
+.stats dd small { display: block; font-size: calc(12.5 * var(--u)); line-height: 1.35; font-weight: 500; font-stretch: 92%; color: var(--ink-2); }
+.stats dd small:empty::before { content: "\00a0"; }
 .stats .wide { grid-column: 1 / -1; }
 
 .card { padding: 16px 20px 0; }
 .card h3 { margin: 0 0 6px; font-size: 15px; font-weight: 700; font-stretch: 88%; }
-.card-note { margin: 6px 0 0; color: var(--ink-2); font-size: 12.5px; text-wrap: pretty; }
+.card-note { margin: 6px 0 0; color: var(--ink-2); font-size: 12.5px; line-height: 1.4; }
+/* room for the longest explanation, so the cards below do not move as it changes */
+#flow-note { min-height: 7em; }
+#curve-note { min-height: 5.6em; }
 #ball-view { width: 100%; aspect-ratio: 13 / 9; height: auto; display: block; border-radius: 3px; background: #c9d6dc; }
 #flow svg, #curve svg { display: block; width: 100%; height: auto; }
 #flow { background: #fff; border: 1px solid var(--rule); border-radius: 3px; }

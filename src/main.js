@@ -19,11 +19,11 @@ function lineWords(v) {
   return v > 0 ? `${Math.round(a - 11)} cm outside off stump` : `${Math.round(a - 11)} cm outside leg stump`;
 }
 function wearWords(v) {
-  if (v < 5) return 'New, lacquer intact';
+  if (v < 5) return 'New';
   if (v < 25) return 'Still shiny';
   if (v < 50) return 'Dulled';
   if (v < 75) return 'Rough';
-  return 'Badly scuffed';
+  return 'Scuffed';
 }
 function windWords(deg) {
   const d = ((deg % 360) + 360) % 360;
@@ -38,7 +38,7 @@ const GROUPS = [
     gist: (c) => `${c.delivery.speedKmh} km/h, ${lengthName(c.delivery.length).toLowerCase()}`,
     controls: [
       { key: 'delivery.speedKmh', label: 'Speed at release', min: 60, max: 160, step: 1, fmt: (v) => `${v} km/h`, note: (v) => `${(v / 1.609344).toFixed(0)} mph` },
-      { key: 'delivery.length', label: 'Length', min: 0, max: 14, step: 0.1, fmt: (v) => `${v.toFixed(1)} m`, note: (v) => `${lengthName(v)}, measured from the batter's stumps` },
+      { key: 'delivery.length', label: 'Length', min: 0, max: 14, step: 0.1, fmt: (v) => `${v.toFixed(1)} m`, note: (v) => `${lengthName(v)}, from the batter's stumps` },
       { key: 'delivery.line', label: 'Line', min: -60, max: 80, step: 1, fmt: (v) => `${v > 0 ? '+' : ''}${v} cm`, note: (v) => `Aimed to pitch ${lineWords(v)}` },
       { key: 'delivery.releaseHeight', label: 'Release height', min: 1.7, max: 2.5, step: 0.01, fmt: (v) => `${v.toFixed(2)} m`, note: () => 'Height of the hand when the ball leaves it' },
       { key: 'delivery.releaseY', label: 'Release position', min: -1.2, max: 1.2, step: 0.01, fmt: (v) => `${cm(v)} cm ${Math.abs(v) < 0.005 ? '' : sideWord(v)}`.trim(),
@@ -53,7 +53,7 @@ const GROUPS = [
         note: (v) => (v === 0 ? 'Pointing straight down the pitch' : v > 0 ? 'Pointing toward the slips' : 'Pointing toward fine leg') },
       { key: 'seam.tilt', label: 'Seam tilt', min: -40, max: 40, step: 1, fmt: (v) => `${Math.abs(v)}°${v ? ' ' + sideWord(v) : ''}`,
         note: (v) => (v === 0 ? 'Bolt upright' : `Top of the seam leaning toward ${sideWord(v)}`) },
-      { key: 'seam.spin', label: 'Backspin', min: 0, max: 40, step: 0.5, fmt: (v) => `${v} rev/s`, note: (v) => `${Math.round(v * 60)} rpm. Holds the seam steady and keeps the ball up` },
+      { key: 'seam.spin', label: 'Backspin', min: 0, max: 40, step: 0.5, fmt: (v) => `${v} rev/s`, note: (v) => `${Math.round(v * 60)} rpm. Steadies the seam and adds lift` },
       { key: 'seam.wobble', label: 'Seam wobble', min: 0, max: 90, step: 1, fmt: (v) => `${v}°`,
         note: (v) => (v === 0 ? 'Released perfectly' : v < 8 ? 'A slight flutter' : v < 35 ? 'Wobble seam' : v < 70 ? 'Scrambled seam' : 'Cross seam, tumbling') },
       { key: 'seam.condition', label: 'Seam condition', min: 0, max: 100, step: 1, fmt: (v) => `${v}%`,
@@ -71,9 +71,9 @@ const GROUPS = [
     ],
     controls: [
       { key: 'ball.wearOff', label: 'Off-side half, wear', min: 0, max: 100, step: 1, fmt: (v) => `${v}%`,
-        note: (v, c, s) => `${wearWords(v)}. Turns the air turbulent above ${Math.round(s.critOff * 3.6)} km/h` },
+        note: (v, c, s) => `${wearWords(v)}. Air turns turbulent above ${Math.round(s.critOff * 3.6)} km/h` },
       { key: 'ball.wearLeg', label: 'Leg-side half, wear', min: 0, max: 100, step: 1, fmt: (v) => `${v}%`,
-        note: (v, c, s) => `${wearWords(v)}. Turns the air turbulent above ${Math.round(s.critLeg * 3.6)} km/h` },
+        note: (v, c, s) => `${wearWords(v)}. Air turns turbulent above ${Math.round(s.critLeg * 3.6)} km/h` },
     ],
   },
   {
@@ -87,10 +87,10 @@ const GROUPS = [
     ],
     controls: [
       { key: 'weather.tempC', label: 'Temperature', min: 0, max: 45, step: 1, fmt: (v) => `${v}°C`, note: (v, c, s) => `Air density ${s.rho.toFixed(3)} kg/m³` },
-      { key: 'weather.humidity', label: 'Humidity', min: 10, max: 100, step: 1, fmt: (v) => `${v}%`, note: () => 'Thins the air by under 1%. Not what makes it swing' },
+      { key: 'weather.humidity', label: 'Humidity', min: 10, max: 100, step: 1, fmt: (v) => `${v}%`, note: () => 'Thins the air by under 1%. Not why it swings' },
       { key: 'weather.altitude', label: 'Altitude', min: 0, max: 2000, step: 10, fmt: (v) => `${v} m`, note: (v) => (v > 800 ? 'Thin air: less drag, less swing' : 'Near sea level') },
       { key: 'weather.cloud', label: 'Cloud cover', min: 0, max: 100, step: 1, fmt: (v) => `${v}%`,
-        note: (v) => (v > 66 ? 'Still air keeps the smooth side laminar for longer' : v > 33 ? 'Some sun stirring the air over the outfield' : 'Sun on the outfield stirs the air the ball flies through') },
+        note: (v) => (v > 66 ? 'Still air keeps the smooth side laminar' : v > 33 ? 'Some sun stirring the air over the outfield' : 'Sun on the outfield stirs up the air') },
       { key: 'weather.windKmh', label: 'Wind', min: 0, max: 50, step: 1, fmt: (v) => `${v} km/h`, note: (v) => (v === 0 ? 'Calm' : '') },
       { key: 'weather.windDir', label: 'Wind direction', min: 0, max: 355, step: 5, fmt: (v) => `${v}°`, note: (v) => windWords(v) },
     ],
@@ -325,39 +325,44 @@ function writeVerdict() {
     const base = m.swing > 0 ? 'outswinger' : 'inswinger';
     shape = regimeOfFlight() === 'reverse swing' ? `Reverse ${base}` : base[0].toUpperCase() + base.slice(1);
   }
+  // Each of the four verdict lines is written to fit on one line, so the block
+  // never changes height as the wording changes.
   let fate;
   const s = m.atStumps;
   const edge = PITCH.stumpsHalfWidth + BALL.radius;
-  if (!s) fate = 'does not carry to the stumps';
+  const high = s && s.z > 1.1 ? (s.z > 1.6 ? 'head high' : 'chest high') : '';
+  if (!s) fate = 'Does not carry to the stumps';
   else if (m.hitStumps) {
     const which = s.y > 0.04 ? 'off' : s.y < -0.04 ? 'leg' : 'middle';
-    fate = `hitting ${which} stump ${cm(s.z)} cm up`;
-  } else if (Math.abs(s.y) <= edge) fate = `over the stumps by ${cm(s.z - BALL.radius - PITCH.stumpHeight)} cm`;
-  else {
-    fate = s.y > 0 ? `past off stump by ${cm(s.y - edge)} cm` : `down the leg side by ${cm(-s.y - edge)} cm`;
-    if (s.z > 1.1) fate += s.z > 1.6 ? ' at head height' : ' at chest height';
-  }
-  $('verdict-title').textContent = `${shape}, ${fate}`;
+    fate = `Hitting ${which} stump, ${cm(s.z)} cm up`;
+  } else if (Math.abs(s.y) <= edge) fate = `Over the stumps by ${cm(s.z - BALL.radius - PITCH.stumpHeight)} cm`;
+  else if (high) fate = s.y > 0 ? `Past off stump, ${high}` : `Down the leg side, ${high}`;
+  else fate = s.y > 0 ? `Past off stump by ${cm(s.y - edge)} cm` : `Down the leg side by ${cm(-s.y - edge)} cm`;
+  $('verdict-shape').textContent = shape;
+  $('verdict-fate').textContent = fate;
 
-  const parts = [];
-  if (Math.abs(m.swing) >= 0.01) parts.push(`Swung ${cm(m.swing)} cm toward ${sideWord(m.swing)} before pitching.`);
-  else parts.push('No swing to speak of.');
-  if (m.pitched) {
+  $('verdict-air').textContent = Math.abs(m.swing) >= 0.01
+    ? `Swung ${cm(m.swing)} cm toward ${sideWord(m.swing)} before pitching.`
+    : 'No swing to speak of.';
+  let off;
+  if (!m.pitched) off = 'Reached the stumps on the full.';
+  else {
     const d = m.pitched.deviation;
-    if (Math.abs(d) >= 0.15) parts.push(`${m.pitched.seamContact > 0.6 ? 'Landed on the seam and' : 'Then'} moved ${Math.abs(d).toFixed(1)}° toward ${sideWord(d)} after pitching.`);
-    else parts.push(m.pitched.seamContact > 0.6 ? 'Landed on the seam and held its line.' : 'Landed on the leather and skidded on.');
-  } else parts.push('Reached the stumps on the full.');
-  $('verdict-sub').textContent = parts.join(' ');
+    const onSeam = m.pitched.seamContact > 0.6;
+    if (Math.abs(d) >= 0.15) off = `${onSeam ? 'Hit the seam and moved' : 'Moved'} ${Math.abs(d).toFixed(1)}° toward ${sideWord(d)}${onSeam ? '.' : ' after pitching.'}`;
+    else off = onSeam ? 'Landed on the seam and held its line.' : 'Landed on the leather and skidded on.';
+  }
+  $('verdict-pitch').textContent = off;
 
   const stats = [];
   const add = (label, value, unit, wide) => stats.push({ label, value, unit, wide });
   add('Swing in the air', `${cm(m.swing)} cm`, Math.abs(m.swing) >= 0.01 ? `${Math.abs(m.swingAngle).toFixed(1)}° to ${sideWord(m.swing)}` : '');
   add('Off the pitch', m.pitched ? `${Math.abs(m.pitched.deviation).toFixed(1)}°` : 'none', m.pitched && Math.abs(m.pitched.deviation) >= 0.05 ? `to ${sideWord(m.pitched.deviation)}` : '');
-  add('Total movement at the stumps', m.totalMovement === null ? 'n/a' : `${cm(m.totalMovement)} cm`, m.totalMovement !== null && Math.abs(m.totalMovement) >= 0.01 ? `to ${sideWord(m.totalMovement)}` : '');
+  add('Movement at stumps', m.totalMovement === null ? 'n/a' : `${cm(m.totalMovement)} cm`, m.totalMovement !== null && Math.abs(m.totalMovement) >= 0.01 ? `to ${sideWord(m.totalMovement)}` : '');
   add('Height at the stumps', s ? `${cm(s.z)} cm` : 'n/a', s ? (s.z > 1.25 ? 'chest high or more' : s.z > PITCH.stumpHeight + BALL.radius ? 'over the bails' : 'stump high') : '');
   add('Pitched', m.pitched ? `${m.pitched.length.toFixed(1)} m` : 'Full toss', m.pitched ? `${m.pitched.name.toLowerCase()}, ${lineWords(m.pitched.line * 100)}` : '', true);
   add('Pace', m.pitched ? `${Math.round(m.releaseSpeed)} to ${Math.round(m.pitched.speedOut)} to ${s ? Math.round(s.speed) : '?'}` : `${Math.round(m.releaseSpeed)} to ${s ? Math.round(s.speed) : '?'}`,
-    m.pitched ? 'km/h at release, off the pitch, at the stumps' : 'km/h at release, at the stumps', true);
+    m.pitched ? 'km/h at release, off the pitch, at stumps' : 'km/h at release, at stumps', true);
   add('Reaches the batter in', m.atCrease ? `${m.atCrease.t.toFixed(2)} s` : 'n/a', '');
   add('Drag coefficient', state.sim.main.samples[0].cd.toFixed(2), 'at release');
 
@@ -368,7 +373,9 @@ function writeVerdict() {
     if (st.wide) div.className = 'wide';
     const dt = document.createElement('dt'); dt.textContent = st.label;
     const dd = document.createElement('dd'); dd.textContent = st.value;
-    if (st.unit) { const sm = document.createElement('small'); sm.textContent = st.unit; dd.appendChild(sm); }
+    // the detail line is always present, even when empty, so rows keep their height
+    const sm = document.createElement('small'); sm.textContent = st.unit || '';
+    dd.appendChild(sm);
     div.append(dt, dd);
     dl.appendChild(div);
   }
@@ -519,6 +526,24 @@ $('reset').addEventListener('click', () => {
   $('preset').value = 0;
   changed('all');
 });
+// The list of bowlers starts folded so the controls stay on screen, and remembers
+// whether it was left open. Its "bowl it" links load the matching preset.
+{
+  const about = $('about');
+  let saved = null;
+  try { saved = localStorage.getItem('swinglab.about'); } catch { /* storage unavailable */ }
+  about.open = saved === 'open';
+  about.addEventListener('toggle', () => {
+    try { localStorage.setItem('swinglab.about', about.open ? 'open' : 'closed'); } catch { /* ignore */ }
+  });
+  about.querySelectorAll('[data-preset]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const sel = $('preset');
+      sel.value = b.dataset.preset;
+      sel.dispatchEvent(new Event('change'));
+    });
+  });
+}
 $('open-notes').addEventListener('click', () => $('notes').showModal());
 $('close-notes').addEventListener('click', () => $('notes').close());
 window.addEventListener('keydown', (e) => {

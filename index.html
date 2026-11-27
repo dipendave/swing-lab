@@ -26,6 +26,23 @@
         <h1>Swing Lab</h1>
         <p>Set the seam, the ball and the day. Watch what the air does.</p>
       </header>
+      <section class="about" aria-label="About Swing Lab">
+        <p>A fast bowler lets go of a ball that weighs about 160 grams, and for half a second nothing touches it. Yet it bends, late, sometimes by more than the width of the stumps. Bowlers were doing that long before anyone could explain it, and it is still one of the best things to watch in any sport.</p>
+        <p>Swing Lab is a fun project, built to see how much of that magic falls out of real aerodynamics. Tilt the seam, scuff one side, change the weather, and watch the ball do what the greats made it do. It is a toy for anyone who has watched a replay and asked how the ball did that.</p>
+        <details id="about">
+          <summary>The bowlers who made it an art</summary>
+          <ul class="legends">
+            <li><b>Sarfraz Nawaz</b> An early master of making an old ball swing the wrong way. Took 7 wickets for 1 run in one spell at Melbourne in 1979, and passed the craft on to Imran Khan, who passed it on again.</li>
+            <li><b>Kapil Dev</b> A natural outswinger from India's greatest fast-bowling all-rounder. Finished with 434 Test wickets, the world record at the time.</li>
+            <li><b>Wasim Akram</b> Left arm, either direction, new ball or old. Bowled Allan Lamb and Chris Lewis with consecutive balls in the 1992 World Cup final, one swinging each way.</li>
+            <li><b>Waqar Younis</b> The reverse-swinging yorker at full pace, curving in at the toes. <button type="button" class="link" data-preset="5">Bowl that yorker</button></li>
+            <li><b>James Anderson</b> 704 Test wickets, the most by any fast bowler, built on moving a new ball both ways. <button type="button" class="link" data-preset="0">Bowl the outswinger</button></li>
+            <li><b>Jasprit Bumrah</b> The first bowler to reach 200 Test wickets at an average under 20. Took 6 for 45 with reverse swing at Visakhapatnam in 2024, including a yorker that bowled Ollie Pope. <button type="button" class="link" data-preset="5">Bowl a reverse yorker</button></li>
+            <li><b>Anya Shrubsole</b> Inswing that won a World Cup: 6 for 46 at Lord's in 2017, the best figures in a Women's World Cup final. <button type="button" class="link" data-preset="1">Bowl the inswinger</button></li>
+            <li><b>Bob Massie</b> 16 wickets on Test debut at Lord's in 1972, hooping it under heavy skies. <button type="button" class="link" data-preset="2">Bowl a big hooper</button></li>
+          </ul>
+        </details>
+      </section>
       <div class="preset-row">
         <label for="preset">Start from a delivery</label>
         <select id="preset"></select>
@@ -71,8 +88,8 @@
 
     <aside class="panel readout" aria-label="What happened">
       <section class="verdict" aria-live="polite">
-        <h2 id="verdict-title">Working it out</h2>
-        <p id="verdict-sub"></p>
+        <h2 id="verdict-title"><span id="verdict-shape">Working it out</span><span id="verdict-fate"></span></h2>
+        <p id="verdict-sub"><span id="verdict-air"></span><span id="verdict-pitch"></span></p>
       </section>
       <dl class="stats" id="stats"></dl>
 
