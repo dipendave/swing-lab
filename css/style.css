@@ -54,8 +54,10 @@ button, select, input { font: inherit; color: inherit; }
   font-stretch: 68%;
   letter-spacing: -0.01em;
 }
-.masthead-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.repo { font-size: 13px; color: var(--ink); text-underline-offset: 3px; white-space: nowrap; }
+.masthead-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.masthead-links { display: grid; justify-items: end; gap: 3px; font-size: 13px; line-height: 1.25; }
+.masthead-links button.link { font-size: inherit; white-space: nowrap; }
+.repo { color: var(--ink); text-underline-offset: 3px; white-space: nowrap; }
 .repo:hover { color: var(--cherry); }
 .masthead p { margin: 8px 0 0; color: var(--ink-2); max-width: 30ch; }
 
@@ -376,6 +378,11 @@ dialog#notes p { margin: 8px 0 0; max-width: 66ch; font-size: 15px; line-height:
 @media (max-width: 1180px) {
   :root { --col: 300px; }
   .transport { flex-wrap: wrap; }
+}
+/* the narrower side column: keep the two links beside the title */
+@media (min-width: 961px) and (max-width: 1180px) {
+  .masthead h1 { font-size: 30px; }
+  .masthead-links { font-size: 12.5px; }
 }
 @media (max-width: 960px) {
   body { background: var(--screen); }
