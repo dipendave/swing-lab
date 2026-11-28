@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { simulate, DEFAULTS, PITCH } from '../src/physics.js';
 import { faceBall, SHOTS } from '../src/batter.js';
 import { mulberry32 } from '../src/challenge.js';
-import { BODY, BAT, BONES, batterPose, fielderPose, restPose, frames, swing } from '../src/pose.js';
+import { BODY, BAT, BONES, RUNUP, batterPose, fielderPose, bowlerPose, bowlerScale, heldBall, nonStrikerPose, umpirePose, restPose, frames, swing } from '../src/pose.js';
 
 const CREASE = PITCH.length - PITCH.crease;
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
@@ -98,10 +98,18 @@ test('batter: no bone ever stretches and nothing sinks into the ground, whatever
   }
 });
 
-test('batter: stands still in the stance until the ball is released', () => {
+test('batter: stands still in the stance until the bowler is in the delivery stride', () => {
   const plan = { release: 0, contact: 0.5, plane: CREASE - 0.5, shot: 'drive', kind: 'vertical', attack: true, bat: { y: 0.1, z: 0.4 } };
-  const idle = batterPose(null, 0), start = batterPose(plan, 0);
+  const idle = batterPose(null, 0), start = batterPose(plan, -0.3);
   assert.ok(dist(idle.L.hand, start.L.hand) < 1e-9 && dist(idle.headC, start.headC) < 1e-9);
+  // by release the bat is on its way up
+  assert.ok(batterPose(plan, 0).L.hand[2] > idle.L.hand[2] + 0.03);
+  // waiting, the bat taps the ground but never goes into it
+  for (let clock = 0; clock < 3; clock += 0.05) {
+    const p = batterPose(plan, -2, clock);
+    assert.ok(along(p.bat.top, p.bat.dir, BAT.length)[2] > 0);
+    assert.ok(dist(p.L.hand, along(p.bat.top, p.bat.dir, BAT.topHand)) < 0.03);
+  }
   // bat grounded by the back foot, front shoulder toward the bowler
   const toe = along(idle.bat.top, idle.bat.dir, BAT.length);
   assert.ok(toe[2] < 0.03 && toe[0] > CREASE);
@@ -180,4 +188,100 @@ test('swing: turns one direction into another along the shortest way round', () 
   assert.ok(dist(swing(a, b, 1), b) < 1e-9 && dist(swing(a, b, 0), a) < 1e-9);
   const back = swing(a, [-1, 0, 0], 0.5); // opposite directions: any way round, but still a unit vector
   assert.ok(Math.abs(Math.hypot(...back) - 1) < 1e-9);
+});
+
+// ------------------------------------------------------------------ the bowler
+const HEIGHTS = [1.7, 1.85, 2.0, 2.15, 2.3, 2.5];
+const releaseFor = (h, y = 0.45) => { const s = bowlerScale(h); return { s, rel: [PITCH.crease / s, y / s, h / s] }; };
+
+test('bowler: the ball is in the hand until it is where the flight starts, at every release height', () => {
+  for (const h of HEIGHTS) {
+    for (const y of [0.3, 0.45, 0.6]) {
+      const { s, rel } = releaseFor(h, y);
+      const p = bowlerPose(rel, 0);
+      const miss = dist(heldBall(p).map((x) => x * s), [PITCH.crease, y, h]);
+      assert.ok(miss < 0.002, `release ${h} m: ball ${(miss * 1000).toFixed(1)} mm from where its flight starts`);
+      // a straight arm, as the law asks
+      assert.ok(dist(p.R.shoulder, p.R.hand) > BODY.upperArm + BODY.foreArm - 0.02, 'the arm is straight at release');
+      // and a legal delivery: some part of the front foot behind the popping crease
+      assert.ok((p.L.footPos[0] - 0.07) * s < PITCH.crease, 'the front foot is not over the line');
+    }
+  }
+  assert.ok(bowlerScale(1.7) >= 0.9 && bowlerScale(2.5) <= 1.16 && Math.abs(bowlerScale(2.12) - 1) < 0.01);
+});
+
+test('bowler: sound from the mark to the end of the follow-through, feet planted, nothing sudden', () => {
+  for (const h of HEIGHTS) {
+    const { rel } = releaseFor(h);
+    let prev = null;
+    const dt = 0.005;
+    for (let t = -RUNUP - 0.3; t <= 1.5; t += dt) {
+      const p = bowlerPose(rel, t, t + 7);
+      checkBody(p, `bowler ${h} at ${t.toFixed(3)}`);
+      if (prev) {
+        for (const sd of ['L', 'R']) {
+          const a = prev[sd].ankle, b = p[sd].ankle;
+          // a foot that is down stays where it is
+          if (a[2] < BODY.ankle + 0.004 && b[2] < BODY.ankle + 0.004) {
+            assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) / dt < 0.6, `bowler ${h}: ${sd} foot slides at ${t.toFixed(3)}`);
+          }
+          assert.ok(dist(a, b) / dt < 14, `bowler ${h}: ${sd} foot jumps at ${t.toFixed(3)}`);
+          assert.ok(dist(prev[sd].hand, p[sd].hand) / dt < 26, `bowler ${h}: ${sd} hand jumps at ${t.toFixed(3)}`);
+        }
+        assert.ok(dist(prev.hipC, p.hipC) / dt < 7, `bowler ${h}: hips jump at ${t.toFixed(3)}`);
+      }
+      prev = p;
+    }
+  }
+});
+
+test('bowler: runs in from a mark, lets go at the crease, and pulls up off the pitch', () => {
+  const { s, rel } = releaseFor(2.15);
+  const mark = bowlerPose(rel, -RUNUP - 1), still = bowlerPose(rel, -RUNUP - 2), end = bowlerPose(rel, 1.5), later = bowlerPose(rel, 3);
+  assert.ok(dist(mark.hipC, still.hipC) < 1e-9, 'stands at the mark before the run');
+  assert.ok(mark.hipC[0] * s < -8 && mark.hipC[0] * s > -16, `the mark is ${(-mark.hipC[0] * s).toFixed(1)} m back`);
+  assert.ok(dist(end.hipC, later.hipC) < 1e-6, 'comes to a stop');
+  assert.ok(end.hipC[0] * s < PITCH.crease + 3 && end.hipC[1] * s > 1.2, 'ends off the pitch, to the off side');
+  // side-on when the back foot lands, front arm up
+  const back = bowlerPose(rel, -0.25);
+  assert.ok(back.L.shoulder[0] > back.R.shoulder[0] + 0.25, 'front shoulder toward the batter');
+  assert.ok(back.L.hand[2] > back.L.shoulder[2], 'front arm up');
+  // the arm comes over the top: behind and below the shoulder, then above it
+  const coming = bowlerPose(rel, -0.085);
+  assert.ok(coming.R.hand[0] < coming.R.shoulder[0] - 0.4);
+  assert.ok(bowlerPose(rel, 0).R.hand[2] > bowlerPose(rel, 0).headC[2]);
+});
+
+// ------------------------------------------------------------- everyone else
+test('fielders: walk in, stand ready, watch the ball and run after it without a bone out of place', () => {
+  for (const kind of ['keeper', 'close', 'ring', 'deep']) {
+    for (let t = -3; t <= 3; t += 0.01) {
+      checkBody(fielderPose(kind, null, t, { clock: t + 5, who: 0.3 }), `${kind} waiting at ${t.toFixed(2)}`);
+      checkBody(fielderPose(kind, { start: 0.5, chase: [6, 9] }, t, { clock: t, who: 0.8, ball: [3, 3, 1] }), `${kind} chasing at ${t.toFixed(2)}`);
+    }
+  }
+  // outfielders start farther back and are in position when the ball is bowled
+  const early = fielderPose('deep', null, -2.5), set = fielderPose('deep', null, 0);
+  assert.ok(early.hipC[1] < set.hipC[1] - 1, 'walks in');
+  // the chase covers ground toward the ball and stops short of it
+  const plan = { start: 0.5, chase: [6, 9] };
+  const a = fielderPose('ring', plan, 1.2), b = fielderPose('ring', plan, 2.2), c = fielderPose('ring', plan, 9);
+  const to = (p) => Math.hypot(6 - p.hipC[0], 9 - p.hipC[1]);
+  assert.ok(to(b) < to(a) - 3 && to(c) < 1 && to(c) > 0.3);
+  // eyes follow the ball
+  const left = fielderPose('ring', null, 1, { ball: [-8, 4, 1] }), right = fielderPose('ring', null, 1, { ball: [8, 4, 1] });
+  assert.ok(left.gaze[0] < -0.3 && right.gaze[0] > 0.3);
+});
+
+test('non-striker and umpires: sound, the non-striker backing up with the bat grounded behind', () => {
+  for (let t = -3; t <= 3; t += 0.01) {
+    const n = nonStrikerPose(t, t);
+    checkBody(n, `non-striker at ${t.toFixed(2)}`);
+    assert.ok(along(n.bat.top, n.bat.dir, BAT.length)[2] > 0, 'bat above the ground');
+    assert.ok(dist(n.R.hand, along(n.bat.top, n.bat.dir, BAT.topHand + 0.04)) < 0.03, 'bat in the hand');
+    checkBody(umpirePose(t, { clock: t, who: 3.3 }), `umpire at ${t.toFixed(2)}`);
+  }
+  const before = nonStrikerPose(-1), after = nonStrikerPose(2);
+  assert.ok(before.hipC[0] < PITCH.crease && after.hipC[0] > before.hipC[0] + 0.8, 'leaves the crease as the ball is bowled');
+  assert.ok(before.hipC[1] < -0.9, 'stands clear of the pitch, away from the bowler');
 });

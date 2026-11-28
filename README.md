@@ -8,7 +8,7 @@ A cricket ball swing simulator. Set the seam, the wear on each half of the ball,
 npm start
 ```
 
-Then open http://localhost:5173. There is nothing to install or build: the site is plain static files, and the Three.js files it needs are checked in under `vendor/three` (version 0.170.0, MIT licence). To update them, bump `three` in `package.json`, run `npm install`, then `npm run vendor`. Space bowls the ball. Drag the view to look around; the camera buttons jump to fixed positions, and Ball cam follows the ball closely enough to watch the seam.
+Then open http://localhost:5173. There is nothing to install or build: the site is plain static files, and the Three.js files it needs are checked in under `vendor/three` (version 0.170.0, MIT licence), and the player model under `assets/figure`. To update Three.js, bump `three` in `package.json`, run `npm install`, then `npm run vendor`. Space bowls the ball. Drag the view to look around; the camera buttons jump to fixed positions, and Ball cam follows the ball closely enough to watch the seam.
 
 On a wide screen the controls sit in the corners of the play screen: the ball and its seam bottom left, the delivery bottom right, weather and pitch top right. The close-up of the ball is itself a control: drag it (or focus it and use the arrow keys) to turn the seam. Sideways sets the seam angle, and rolling it sets the tilt. Below 1360 px wide the same panels move into the left column so they do not cover the pitch.
 
@@ -16,7 +16,9 @@ On a wide screen the controls sit in the corners of the play screen: the ball an
 npm test
 ```
 
-runs 76 checks: 29 of the physics engine against published behaviour of real cricket balls, 26 of the batter, the laws and the over, 10 of the players' bodies and strokes, 10 of the visit-counting consent rules, and one that the version shown under the title matches `package.json`.
+runs 85 checks: 29 of the physics engine against published behaviour of real cricket balls, 26 of the batter, the laws and the over, 15 of how the players move, 4 of the player model file, 10 of the visit-counting consent rules, and one that the version shown under the title matches `package.json`.
+
+Add `?gfx=high`, `?gfx=medium` or `?gfx=low` to the address to pin the graphics quality, which otherwise starts high and steps down by itself on a machine that cannot keep up. `?debug` puts the scene on `window.swinglab` for looking around from the console.
 
 The version is written in two places, `package.json` and the `#version` label in `index.html`. Change both together.
 
@@ -34,7 +36,11 @@ The version is written in two places, `package.json` and the `#version` label in
 
 **Challenge mode.** One over against a batter of medium ability, in one of six match situations that fix the ball, pitch, weather and field. The batter (`src/batter.js`) reads the length, commits 0.22 s before contact, and expects the ball to carry on with part of the swing already seen and a plain bounce; the bat goes there, with a late adjustment that grows with the time the ball is in view after pitching, plus human error. The real ball then arrives where the physics puts it, and the gap decides middle, edge or miss. Bowled, caught and leg before wicket (Law 36) follow from the real trajectory. Runs off a clean hit and whether an edge is caught come from tables by stroke and field. Wides and no-balls use limited-overs interpretations. The bowler's own aim has scatter, in the angle of release, so a yorker is harder to land than a short ball.
 
-**The players.** `src/pose.js` works out where every joint is, with no graphics involved. A pose is solved in priority order: the bat goes where the stroke needs it, the hands stay on the handle, the trunk leans and the hips shift until the shoulders can reach, and a foot is dragged in if a leg cannot. No bone ever changes length. `src/figures.js` puts a body on those joints: one skinned mesh for the clothed trunk and limbs, modelled to adult proportions, with rigid kit (helmet and grille or cap, gloves, pads, boots, bat) riding on the bones. The keeper and the catcher go for the ball when it comes to them. Everything is generated in code; there are no model or texture files.
+**The players.** `src/pose.js` works out where every joint is, with no graphics involved. A pose is solved in priority order: the hands go where they are needed (on the bat handle, on the ball), the trunk leans and the hips shift until the shoulders can reach, and a foot is dragged in if a leg cannot. No bone ever changes length. On top of the solver sit the movements. The batter's strokes put the bat where the ball is. Anyone on foot is driven by a footstep model: feet land a little ahead of the hips at a steady beat and stay where they land until they push off, so nothing skates. The bowler runs in from a mark, leaps, lands back foot then front foot, and brings a straight arm over; the body is worked back from the hand, so the hand is on the ball's release point at the moment of release for any release height (a higher release is a taller bowler, a low one a rounder arm). Fielders walk in as the bowler runs up, settle, follow the ball with their eyes, and the nearest two chase a ball that has been hit. There is a non-striker who backs up, and two umpires.
+
+`src/figures.js` puts a body on those joints. The body is the MakeHuman project's base mesh, shirt, trousers and trainers (all released CC0), shaped as a young man, with the clothes recoloured as whites. `tools/build_figure.py` builds `assets/figure` from MakeHuman's files: it fits the clothes, relaxes the hands, drops the skin the clothes hide, and ties every vertex to the solver's sixteen bones by adding up the weights MakeHuman gives its own finer skeleton. The solver's bone lengths in `src/pose.js` are that model's, and a test holds the two to each other. Helmet, caps, gloves, pads and bat are generated in code and ride on the bones.
+
+**The light.** `src/scene.js` lights the ground the way daylight does. The sky is Preetham's scattering model (as in Three.js's `Sky`), with a layer of cloud; the same sky, blurred, is the fill light on everything. The sun's shadows are drawn as four cascades so that they are sharp near the camera and still reach the boundary. On machines that can afford it the frame is finished with ambient occlusion (shade where surfaces meet) and a little bloom. Cloud cover dims the sun and greys the sky; humidity thickens the haze. Turf is mown in bands that look pale brushed away from the eye and dark brushed toward it. None of this feeds back into the physics.
 
 ### Calibration targets
 
@@ -49,7 +55,7 @@ The version is written in two places, `package.json` and the `#version` label in
 ### What it leaves out
 
 - No batter in free play. In challenge mode there is no running between the wickets (so no run-outs), and no byes or leg byes.
-- The players are built and posed by formula, not motion-captured, and there is no bowler, non-striker or umpire on the field.
+- The players' movements are worked out by formula, not motion-captured. Fingers do not move, cloth does not swing, and faces do not change. The fielders' chase is for show: who fields the ball and how many are run comes from the batter model's tables.
 - Scoring off a clean hit, and catching, are probabilities, not simulation.
 - No aerodynamic torque on the seam: the wobble you set is the wobble you get.
 - No moisture on the ball itself.
@@ -71,16 +77,19 @@ Four events are sent besides page views: `delivery_bowled` (with `speed_kmh` and
 ## Files
 
 - `src/physics.js` – atmosphere, strip aerodynamics, flight, bounce, aim solver
-- `src/scene.js` – ground, sky, ball, cameras (Three.js)
+- `src/scene.js` – ground, sky, light and shadows, ball, cameras (Three.js)
 - `src/ballTexture.js` – procedural leather, seam and wear
 - `src/panels.js` – airflow diagram and side-force chart
 - `src/main.js` – control panels, the draggable ball, presets, playback, challenge flow
 - `src/batter.js` – the batter: reading the ball, choosing a stroke, what happens
 - `src/challenge.js` – the scenarios, the over, the bowler's scatter
 - `src/field.js` – fielders, and the ball's path after it reaches the batter
-- `src/pose.js` – where every joint of a player is: the strokes, the fielders, the solver
-- `src/figures.js` – bodies and kit for the batter and fielders in the 3D view
+- `src/pose.js` – where every joint of a player is: the solver, footsteps, the strokes, the bowling action, the fielders
+- `src/figures.js` – bodies and kit for everyone on the ground in the 3D view
+- `assets/figure` – the player model: meshes, joints and textures (CC0, from MakeHuman)
+- `tools/build_figure.py` – builds `assets/figure` from MakeHuman's files
+- `tools/vendor.mjs` – copies the Three.js files the page loads into `vendor/three`
 - `src/analytics.js`, `src/consent.js` – visit counting and who is asked first
-- `tests/physics.test.js`, `tests/challenge.test.js`, `tests/pose.test.js`, `tests/consent.test.js`, `tests/site.test.js` – physics, batter and rules, players' bodies, consent and version checks
+- `tests/physics.test.js`, `tests/challenge.test.js`, `tests/pose.test.js`, `tests/figure.test.js`, `tests/consent.test.js`, `tests/site.test.js` – physics, batter and rules, players' movement, the player model, consent and version checks
 - `serve.mjs` – static file server for local use
 - `vendor/three` – the Three.js files the page loads

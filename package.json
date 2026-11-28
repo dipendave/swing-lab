@@ -1,13 +1,13 @@
 {
   "name": "swing-lab",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Cricket ball swing simulator: boundary-layer strip aerodynamics, rigid-body flight and pitch impact.",
   "scripts": {
     "start": "node serve.mjs",
     "test": "node --test",
-    "vendor": "mkdir -p vendor/three/addons/controls vendor/three/addons/lines && cp node_modules/three/build/three.module.min.js node_modules/three/LICENSE vendor/three/ && cp node_modules/three/examples/jsm/controls/OrbitControls.js vendor/three/addons/controls/ && cp node_modules/three/examples/jsm/lines/Line2.js node_modules/three/examples/jsm/lines/LineMaterial.js node_modules/three/examples/jsm/lines/LineGeometry.js node_modules/three/examples/jsm/lines/LineSegments2.js node_modules/three/examples/jsm/lines/LineSegmentsGeometry.js vendor/three/addons/lines/"
+    "vendor": "node tools/vendor.mjs"
   },
   "devDependencies": {
     "three": "0.170.0"

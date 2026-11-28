@@ -6,6 +6,7 @@ import { initAnalytics, track } from './analytics.js';
 import { faceBall, SHOTS } from './batter.js';
 import { SCENARIOS, applyScenario, newOver, situation, recordBall, standing, deliver, mulberry32 } from './challenge.js';
 import { flightAfter } from './field.js';
+import { RUNUP } from './pose.js';
 
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -151,6 +152,10 @@ const state = {
   tally: { played: 0, won: 0 },
 };
 
+// Where the playhead starts. The ball leaves the hand at 0; with the players
+// on the ground the bowler has to run in first.
+const startTime = () => (state.mode === 'challenge' && world && world.hasPeople() ? -RUNUP : 0);
+
 // What is on screen: the ball just bowled in a challenge, or else the preview
 // of the current settings.
 const shownSim = () => (state.play ? state.play.sim : state.sim);
@@ -169,6 +174,14 @@ try {
 }
 const flow = new FlowDiagram($('flow'));
 const chart = new SwingCurve($('curve'));
+// the players arrive a moment after the page: put the bowler back at the mark
+if (world) {
+  world.peopleReady.then(() => {
+    if (!state.playing && state.t === 0 && startTime() < 0) { state.t = startTime(); state.needsFrame = true; }
+  });
+}
+// a handle for looking around from the console: add ?debug to the address
+if (new URLSearchParams(location.search).has('debug')) window.swinglab = { world, state };
 
 // ------------------------------------------------------------ build controls
 // The controls live in four panels: ball and seam, delivery, weather, pitch.
@@ -386,7 +399,7 @@ function changed(group) {
   // a ball already bowled in a challenge counts, even if its replay is cut short
   if (state.play && !state.play.committed) commitBall();
   state.dirty.sim = true;
-  state.t = 0;
+  state.t = startTime();
   state.playing = false;
   $('bowl').textContent = bowlLabel();
   if (group === 'ball' || group === 'seam' || group === 'all') state.dirty.ball = true;
@@ -708,7 +721,7 @@ function bowlChallenge() {
   const flight = flightAfter(sim, outcome, over.scenario.field, rng);
   state.play = { sim, cfg, outcome, ...flight, committed: false };
   state.duration = flight.endTime;
-  state.t = 0;
+  state.t = startTime();
   state.playing = true;
   state.lastIndex = -1;
   if (world) {
@@ -723,9 +736,12 @@ function bowlChallenge() {
       bat: outcome.bat || { y: outcome.contact.p[1], z: outcome.contact.p[2] },
     });
     const end = flight.samples[flight.samples.length - 1];
-    world.setFieldingPlan(flight.caughtBy
-      ? { id: flight.caughtBy, start: outcome.contact.t, time: flight.endTime, point: end.p }
-      : null);
+    // someone takes it, or it was hit and the nearest fielders go after it
+    const hit = outcome.quality && outcome.quality !== 'miss' && outcome.quality !== 'none';
+    world.setFieldingPlan(
+      flight.caughtBy ? { id: flight.caughtBy, start: outcome.contact.t, time: flight.endTime, point: end.p } : null,
+      hit && !flight.caughtBy && flight.stumpsTime === null ? { start: outcome.contact.t, point: end.p } : null,
+    );
   }
   $('flash').hidden = true;
   writeVerdict();
@@ -777,10 +793,13 @@ function finishOver() {
 
 function updateFrame(force) {
   const s = sampleAt(state.t);
-  if (world) world.setBall(s);
-  $('scrub').value = state.duration > 0 ? Math.round((state.t / state.duration) * 1000) : 0;
-  $('scrub').style.setProperty('--fill', `${(state.t / state.duration) * 100}%`);
-  $('clock').textContent = `${state.t.toFixed(3)} s`;
+  if (world) world.setBall(s, state.t);
+  const from = Math.min(startTime(), state.t), span = state.duration - from;
+  const done = span > 0 ? (state.t - from) / span : 0;
+  $('scrub').value = Math.round(done * 1000);
+  $('scrub').style.setProperty('--fill', `${done * 100}%`);
+  // the clock counts the ball's flight; before that the bowler is on the way in
+  $('clock').textContent = `${Math.max(0, state.t).toFixed(3)} s`;
 
   // once the ball has left the bat the airflow picture no longer applies
   if ((force || s.index !== state.lastIndex) && !s.after) {
@@ -838,7 +857,10 @@ function frame(now) {
   if (state.playing) {
     // slow motion is for the ball's flight; once it has met the bat, pick the pace up
     const afterBat = state.play && state.t >= state.play.contactTime;
-    state.t += dt * (afterBat ? Math.max(state.rate, 0.7) : state.rate);
+    // the run-up at its own pace, easing into the chosen speed for the delivery stride
+    const k = Math.min(1, Math.max(0, (state.t + 0.34) / 0.22));
+    const runIn = 1 + (state.rate - 1) * k * k * (3 - 2 * k);
+    state.t += dt * (state.t < 0 ? runIn : afterBat ? Math.max(state.rate, 0.7) : state.rate);
     if (state.t >= state.duration) {
       state.t = state.duration;
       state.playing = false;
@@ -882,7 +904,8 @@ $('rate').addEventListener('change', (e) => { state.rate = Number(e.target.value
 $('scrub').addEventListener('input', (e) => {
   if (state.play && !state.play.committed) commitBall(); // scrubbing a live ball still counts it
   state.playing = false;
-  state.t = (Number(e.target.value) / 1000) * state.duration;
+  const from = startTime();
+  state.t = from + (Number(e.target.value) / 1000) * (state.duration - from);
   state.needsFrame = true;
 });
 $('show-ref').addEventListener('change', (e) => world && world.showReference(e.target.checked));

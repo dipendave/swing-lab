@@ -1,12 +1,25 @@
 // The ground, the light and the ball. Everything visual lives here; no physics.
+//
+// The light is a daylight model: a sky that scatters sunlight as air does, a
+// sun whose shadows are drawn in cascades so they stay sharp near the camera
+// and reach the boundary, the sky itself as the fill light, and, on machines
+// that can afford it, shading where surfaces meet and a glow round the
+// brightest things. All of it follows the weather.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+import { CSM } from 'three/addons/csm/CSM.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { BALL, PITCH } from './physics.js';
 import { BallSkin, ballGeometry } from './ballTexture.js';
-import { Batter, Fielders, setShadowStrength } from './figures.js';
+import { Batter, Bowler, NonStriker, Umpires, Fielders, setShadowStrength, loadFigures } from './figures.js';
 
 const HALF = PITCH.length / 2;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -35,6 +48,10 @@ const SKY_FRAG = /* glsl */ `
   uniform vec3 sunDir;
   uniform float cloud;
   uniform float time;
+  uniform float turbidity;
+  uniform float disc;
+  const float PI = 3.141592653589793;
+
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
@@ -47,34 +64,113 @@ const SKY_FRAG = /* glsl */ `
     for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.02 + 17.0; a *= 0.5; }
     return s;
   }
+  float layer(vec2 uv) { return fbm(uv) * 0.75 + fbm(uv * 2.7 + 9.0) * 0.25; }
+
+  // Clear air: Preetham's daylight model, as three.js's Sky object has it.
+  // Blue overhead, pale at the horizon, bright round the sun, hazier as the
+  // turbidity goes up.
+  const vec3 totalRayleigh = vec3(5.804542996261093E-6, 1.3562911419845635E-5, 3.0265902468824876E-5);
+  const vec3 mieConst = vec3(1.8399918514433978E14, 2.7798023919660528E14, 4.0790479543861094E14);
+  float sunIntensity(float zenithCos) {
+    return 1000.0 * max(0.0, 1.0 - exp(-((1.6110731556870734 - acos(clamp(zenithCos, -1.0, 1.0))) / 1.5)));
+  }
+  vec3 daylight(vec3 dir) {
+    float sunE = sunIntensity(sunDir.y);
+    vec3 betaR = totalRayleigh * 2.0;
+    vec3 betaM = 0.434 * (0.2 * turbidity) * 10E-18 * mieConst * 0.005;
+    float zenith = acos(max(0.0, dir.y));
+    float inv = 1.0 / (cos(zenith) + 0.15 * pow(93.885 - (zenith * 180.0 / PI), -1.253));
+    vec3 fex = exp(-(betaR * 8.4E3 * inv + betaM * 1.25E3 * inv));
+    float c = dot(dir, sunDir);
+    float rPhase = 0.05968310365946075 * (1.0 + pow(c * 0.5 + 0.5, 2.0));
+    float mPhase = 0.07957747154594767 * (0.36 / pow(1.64 - 1.6 * c, 1.5));
+    vec3 scatter = (betaR * rPhase + betaM * mPhase) / (betaR + betaM);
+    vec3 lin = pow(sunE * scatter * (1.0 - fex), vec3(1.5));
+    lin *= mix(vec3(1.0), pow(sunE * scatter * fex, vec3(0.5)), clamp(pow(1.0 - sunDir.y, 5.0), 0.0, 1.0));
+    vec3 col = (lin + vec3(0.1) * fex) * 0.04 + vec3(0.0, 0.0003, 0.00075);
+    return pow(col, vec3(1.0 / 2.4));
+  }
+
   void main() {
     vec3 d = normalize(vDir);
     float h = max(d.y, 0.0);
-    vec3 clearSky = mix(vec3(0.62, 0.78, 0.94), vec3(0.13, 0.36, 0.78), pow(h, 0.55));
-    vec3 greySky = mix(vec3(0.74, 0.77, 0.80), vec3(0.50, 0.54, 0.59), pow(h, 0.6));
-    vec3 sky = mix(clearSky, greySky, smoothstep(0.35, 1.0, cloud));
+    vec3 above = normalize(vec3(d.x, h, d.z));
+    float over = smoothstep(0.55, 1.0, cloud);
+    // an overcast sky is three times as bright overhead as at the horizon
+    vec3 grey = vec3(0.56, 0.59, 0.63) * (1.0 + 2.0 * h) * 0.5;
+    vec3 sky = mix(daylight(above) * 0.62, grey, over);
 
-    float sd = max(dot(d, sunDir), 0.0);
-    float clear = 1.0 - smoothstep(0.3, 0.95, cloud);
-    sky += clear * (vec3(1.0, 0.93, 0.78) * pow(sd, 600.0) * 6.0 + vec3(1.0, 0.86, 0.62) * pow(sd, 12.0) * 0.22);
-
+    // one layer of cloud, lit from the sun's side and dark underneath
     vec2 uv = d.xz / (d.y + 0.22) * 1.6 + vec2(time * 0.006, time * 0.002);
-    float n = fbm(uv);
-    float n2 = fbm(uv * 2.7 + 9.0);
+    float dens = layer(uv);
     float thr = mix(0.78, 0.22, cloud);
-    float c = smoothstep(thr, thr + 0.28, n * 0.75 + n2 * 0.25);
-    c *= smoothstep(-0.02, 0.2, d.y);
-    vec3 lit = mix(vec3(1.0, 0.99, 0.96), vec3(0.80, 0.82, 0.84), cloud);
-    vec3 shade = mix(vec3(0.74, 0.78, 0.84), vec3(0.42, 0.45, 0.49), cloud);
-    vec3 cloudCol = mix(lit, shade, smoothstep(0.35, 0.8, n2 * 0.6 + c * 0.4));
-    sky = mix(sky, cloudCol, c * mix(0.85, 0.97, cloud));
+    float c = smoothstep(thr, thr + 0.28, dens) * smoothstep(-0.02, 0.2, d.y);
+    float sunward = layer(uv + normalize(sunDir.xz + vec2(1e-4)) * 0.11);
+    float shade = clamp((sunward - dens) * 3.2 + 0.42, 0.0, 1.0);
+    float thick = smoothstep(thr + 0.1, thr + 0.55, dens);
+    vec3 lit = mix(vec3(1.5, 1.46, 1.38), vec3(0.72, 0.74, 0.78), over);
+    vec3 dark = mix(vec3(0.5, 0.56, 0.66), vec3(0.33, 0.36, 0.41), over);
+    vec3 cloudCol = mix(lit, dark, clamp(shade * 0.65 + thick * 0.5, 0.0, 1.0));
+    float sd = max(dot(d, sunDir), 0.0);
+    float open = 1.0 - smoothstep(0.3, 0.95, cloud);
+    cloudCol += open * vec3(1.0, 0.9, 0.72) * pow(sd, 20.0) * (1.0 - thick) * 0.9; // silver lining
+    cloudCol = mix(cloudCol, sky, exp(-h * 10.0) * 0.75); // lost in the haze low down
+    sky = mix(sky, cloudCol, c * mix(0.9, 0.98, cloud));
 
-    // below the horizon: haze fading into turf so reflections on the ball look grounded
-    vec3 ground = mix(vec3(0.30, 0.42, 0.24), vec3(0.26, 0.34, 0.24), cloud);
-    sky = mix(sky, ground, smoothstep(0.0, -0.08, d.y));
+    // the sun itself, where no cloud is in front of it
+    float clearOfCloud = open * (1.0 - c);
+    sky += clearOfCloud * vec3(1.0, 0.95, 0.85) * (disc * 45.0 * smoothstep(0.99993, 0.99997, sd) + 0.5 * pow(sd, 400.0));
+
+    // below the horizon: turf, so that what the sky reflects and bounces is grounded
+    vec3 ground = mix(vec3(0.115, 0.19, 0.075), vec3(0.085, 0.125, 0.065), cloud);
+    sky = mix(sky, ground, smoothstep(0.0, -0.06, d.y));
     gl_FragColor = vec4(sky, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
+  }
+`;
+
+// The last word on every frame: darken the corners a little, as a lens does.
+const LENS = {
+  uniforms: { tDiffuse: { value: null }, amount: { value: 0.22 } },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform float amount;
+    varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec2 q = vUv - 0.5;
+      gl_FragColor = vec4(c.rgb * (1.0 - amount * smoothstep(0.25, 0.95, dot(q, q) * 2.0)), c.a);
+    }
+  `,
+};
+
+// Turf is not one colour. It is mown in bands that look pale brushed away from
+// you and dark brushed toward you, and it grows in patches.
+const GRASS_VERT = /* glsl */ `
+  vGroundPos = (modelMatrix * vec4(position, 1.0)).xyz;
+`;
+const GRASS_FRAG = /* glsl */ `
+  {
+    vec2 g = vGroundPos.xz;
+    vec2 gi = floor(g * 0.045), gf = fract(g * 0.045);
+    vec2 gu = gf * gf * (3.0 - 2.0 * gf);
+    #define GH(p) fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453)
+    float patch1 = mix(mix(GH(gi), GH(gi + vec2(1.0, 0.0)), gu.x), mix(GH(gi + vec2(0.0, 1.0)), GH(gi + vec2(1.0, 1.0)), gu.x), gu.y);
+    vec2 hi = floor(g * 0.31 + 7.0), hf = fract(g * 0.31 + 7.0);
+    vec2 hu = hf * hf * (3.0 - 2.0 * hf);
+    float patch2 = mix(mix(GH(hi), GH(hi + vec2(1.0, 0.0)), hu.x), mix(GH(hi + vec2(0.0, 1.0)), GH(hi + vec2(1.0, 1.0)), hu.x), hu.y);
+    vec3 toEye = cameraPosition - vGroundPos;
+    vec2 look = toEye.xz / max(length(toEye.xz), 0.001);
+    float along = step(0.5, fract(g.y / 9.0)) * 2.0 - 1.0;
+    float across = step(0.5, fract(g.x / 9.0)) * 2.0 - 1.0;
+    float mown = along * look.y * 0.11 + across * look.x * 0.045;
+    diffuseColor.rgb *= (1.0 + mown) * (0.9 + 0.14 * patch1 + 0.08 * patch2);
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.16, 1.05, 0.74), smoothstep(0.6, 0.95, patch1) * 0.3);
   }
 `;
 
@@ -85,16 +181,15 @@ function paintOutfield() {
   c.width = c.height = S;
   const g = c.getContext('2d');
   const rnd = lcg(11);
-  // two mowing stripes per tile
-  g.fillStyle = '#3f7a3a'; g.fillRect(0, 0, S, S / 2);
-  g.fillStyle = '#4a8a42'; g.fillRect(0, S / 2, S, S / 2);
-  for (let i = 0; i < 26000; i++) {
+  g.fillStyle = '#44813d'; g.fillRect(0, 0, S, S);
+  // blades: many, short and faint, darker ones underneath and lighter on top
+  for (let i = 0; i < 90000; i++) {
     const x = rnd() * S, y = rnd() * S;
-    const l = 2 + rnd() * 5;
-    const tone = rnd();
-    g.strokeStyle = tone < 0.5 ? `rgba(24, 66, 24, ${0.1 + rnd() * 0.16})` : `rgba(150, 196, 110, ${0.08 + rnd() * 0.12})`;
+    const l = 2 + rnd() * 4;
+    const light = i > 45000;
+    g.strokeStyle = light ? `rgba(150, 200, 105, ${0.05 + rnd() * 0.1})` : `rgba(22, 62, 22, ${0.06 + rnd() * 0.12})`;
     g.lineWidth = 1;
-    g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rnd() - 0.5) * 2, y + l); g.stroke();
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rnd() - 0.5) * 2.4, y + l); g.stroke();
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -301,8 +396,14 @@ function buildWicket(wood) {
   return { group, stumps, bails };
 }
 
+const TIERS = ['low', 'medium', 'high'];
+const SHADOW_FAR = 170; // metres from the camera that shadows are drawn to
+const MAX_PIXELS = 4.4e6;
+
 const CAMS = {
-  broadcast: { pos: [0, 6.5, HALF + 11], look: [0, 0, -4.5], fov: 24 },
+  // from high behind the bowler's arm on a long lens, as television has it:
+  // the delivery stride at the bottom of the picture, the keeper near the top
+  broadcast: { pos: [0, 10, HALF + 30], look: [0, 0, -5], fov: 16 },
   umpire: { pos: [0, 1.78, HALF + 1.6], look: [0, 0.55, -HALF], fov: 30 },
   side: { pos: [-25, 1.6, -0.8], look: [0, 3.4, -0.8], fov: 50 },
   top: { pos: [0, 31, 0.6], look: [0, 0, 0], fov: 40 },
@@ -314,12 +415,17 @@ export class World {
   constructor(canvas, ballCanvas) {
     this.canvas = canvas;
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer = renderer;
+    // How much the machine is asked to do. It starts at the top and steps down
+    // by itself if frames come slowly; ?gfx=high, medium or low pins it.
+    const asked = new URLSearchParams(window.location.search).get('gfx');
+    this.pinned = TIERS.includes(asked);
+    this.tier = this.pinned ? asked : 'high';
+    this.slow = 0;
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(20, 1, 0.05, 1500);
@@ -335,17 +441,31 @@ export class World {
     this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     this.sunDir = new THREE.Vector3(-0.5, 0.74, 0.42).normalize();
+    this.adopted = new WeakSet();
     this._buildSky();
     this._buildLights();
     this._buildGround();
     this._buildBall();
     this._buildPaths();
     this._buildInset(ballCanvas);
-    // people appear only in challenge mode
-    this.batter = new Batter();
-    this.batter.group.visible = false;
-    this.scene.add(this.batter.group);
+    this._buildPipeline();
+    this._adopt(this.scene);
+    // People appear only in challenge mode, and only once their model has
+    // arrived: until then the ball is bowled at an empty crease.
+    this.batter = null;
     this.fielders = null;
+    this.people = { on: false, field: null, batterPlan: null, fieldingPlan: null };
+    this.peopleReady = loadFigures().then(() => {
+      this.batter = new Batter();
+      this.bowler = new Bowler();
+      this.nonStriker = new NonStriker();
+      this.umpires = new Umpires();
+      this.cast = [this.batter, this.bowler, this.nonStriker, this.umpires];
+      for (const c of this.cast) { this.scene.add(c.group); this._adopt(c.group); }
+      if (this.release) this.bowler.setRelease(this.release);
+      this._castPeople();
+      return true;
+    }).catch((e) => { console.warn('Players unavailable', e); return false; });
     this.setCamera('broadcast');
     this._envDirty = true;
     this._lastEnv = -1;
@@ -359,7 +479,7 @@ export class World {
     this.skyMat = new THREE.ShaderMaterial({
       vertexShader: SKY_VERT,
       fragmentShader: SKY_FRAG,
-      uniforms: { sunDir: { value: this.sunDir }, cloud: { value: 0.5 }, time: { value: 0 } },
+      uniforms: { sunDir: { value: this.sunDir }, cloud: { value: 0.5 }, time: { value: 0 }, turbidity: { value: 5 }, disc: { value: 1 } },
       side: THREE.BackSide,
       depthWrite: false,
       depthTest: true,
@@ -367,8 +487,10 @@ export class World {
     const geo = new THREE.SphereGeometry(900, 48, 24);
     this.sky = new THREE.Mesh(geo, this.skyMat);
     this.sky.frustumCulled = false;
+    this.sky.userData.noAO = true;
     this.scene.add(this.sky);
-    // separate scene used only to bake reflections for the ball
+    // The same sky, in a scene of its own, is what lights everything from all
+    // round and what the ball reflects.
     this.envScene = new THREE.Scene();
     this.envScene.add(new THREE.Mesh(geo, this.skyMat));
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -376,25 +498,87 @@ export class World {
   }
 
   _buildLights() {
-    this.hemi = new THREE.HemisphereLight(0xdfeaff, 0x4d6a3c, 1.0);
-    this.scene.add(this.hemi);
-    const sun = new THREE.DirectionalLight(0xfff2dc, 3.0);
-    sun.position.copy(this.sunDir).multiplyScalar(60);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    const sc = sun.shadow.camera;
-    sc.left = -9; sc.right = 9; sc.top = 16; sc.bottom = -16; sc.near = 10; sc.far = 120;
-    sun.shadow.bias = -0.0004;
-    sun.shadow.radius = 3;
-    this.sun = sun;
-    this.scene.add(sun);
-    this.scene.add(sun.target);
+    // The sun. Its shadows are drawn four times over, each covering a longer
+    // stretch of the view than the last, so the batter's are sharp and the
+    // boundary fielders still have theirs.
+    this.csm = new CSM({
+      camera: this.camera, parent: this.scene, cascades: 4, maxFar: SHADOW_FAR, mode: 'custom',
+      customSplitsCallback: (n, near, far, out) => { for (const d of [13, 34, 78]) out.push(d / far); out.push(1); },
+      shadowMapSize: 2048, shadowBias: -0.00012, lightDirection: this.sunDir.clone().negate(),
+      lightIntensity: 3, lightNear: 1, lightFar: 420, lightMargin: 120,
+    });
+    this.csm.fade = true;
+    for (const l of this.csm.lights) l.shadow.normalBias = 0.035;
+    this.sunColor = new THREE.Color(0xfff1dc);
+  }
+
+  // Every lit surface has to be told about the cascades, or it is lit by all
+  // four suns at once. Called on anything added to the scene.
+  _adopt(root) {
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (!m || !m.isMeshStandardMaterial || this.adopted.has(m)) continue;
+        this.adopted.add(m);
+        const own = Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile') ? m.onBeforeCompile : null;
+        this.csm.setupMaterial(m);
+        if (own) {
+          const theirs = m.onBeforeCompile;
+          m.onBeforeCompile = (shader, renderer) => { theirs(shader, renderer); own(shader, renderer); };
+        }
+      }
+    });
+  }
+
+  // The frame is drawn into a buffer first and finished from there.
+  _buildPipeline() {
+    const r = this.renderer;
+    const composer = new EffectComposer(r, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType }));
+    composer.renderTarget2.samples = 4; // the one the scene is drawn into: smooth edges
+    composer.addPass(new RenderPass(this.scene, this.camera));
+    // shade where surfaces meet: under arms, between legs, where boots touch turf
+    const ao = new GTAOPass(this.scene, this.camera, 4, 4);
+    ao.updateGtaoMaterial({ radius: 0.4, distanceExponent: 1.5, thickness: 1.4, distanceFallOff: 1, scale: 1.1, samples: 12, screenSpaceRadius: false });
+    ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, radiusExponent: 2, rings: 2, samples: 12 });
+    ao.blendIntensity = 0.85;
+    // lines, sprites and anything see-through has no surface to shade against
+    const hidden = [];
+    ao.overrideVisibility = () => {
+      hidden.length = 0;
+      this.scene.traverse((o) => {
+        if (o.visible && (o.userData.noAO || o.isPoints || o.isLine || o.isLineSegments2 || (o.material && (o.material.transparent || o.material.alphaTest > 0)))) {
+          o.visible = false;
+          hidden.push(o);
+        }
+      });
+    };
+    ao.restoreVisibility = () => { for (const o of hidden) o.visible = true; };
+    // it is worked out at one sample per screen pixel, however dense the display
+    const aoSize = ao.setSize.bind(ao);
+    ao.setSize = (w, h) => { const k = Math.max(1, r.getPixelRatio()); aoSize(Math.ceil(w / k), Math.ceil(h / k)); };
+    composer.addPass(ao);
+    const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.14, 0.5, 1.0);
+    composer.addPass(bloom);
+    composer.addPass(new ShaderPass(LENS));
+    composer.addPass(new OutputPass());
+    this.composer = composer;
+    this.ao = ao;
+    this.bloom = bloom;
   }
 
   _buildGround() {
     const s = this.scene;
-    const grass = new THREE.MeshStandardMaterial({ map: paintOutfield(), roughness: 1, metalness: 0 });
-    grass.map.repeat.set(52, 52);
+    const grass = new THREE.MeshStandardMaterial({ map: paintOutfield(), roughness: 0.92, metalness: 0 });
+    grass.map.repeat.set(120, 120);
+    grass.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vGroundPos;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>\n${GRASS_VERT}`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vGroundPos;')
+        .replace('#include <map_fragment>', `#include <map_fragment>\n${GRASS_FRAG}`);
+    };
+    grass.customProgramCacheKey = () => 'turf';
     const field = new THREE.Mesh(new THREE.CircleGeometry(420, 96), grass);
     field.rotation.x = -Math.PI / 2;
     field.receiveShadow = true;
@@ -497,6 +681,7 @@ export class World {
         polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
     );
     this.blob.rotation.x = -Math.PI / 2;
+    this.blob.userData.noAO = true;
     this.scene.add(this.blob);
   }
 
@@ -567,7 +752,8 @@ export class World {
       const cam = new THREE.PerspectiveCamera(15, canvas.width / canvas.height, 0.05, 10);
       cam.position.set(0.012, 0.05, 0.42);
       cam.lookAt(0, 0, 0);
-      const ball = new THREE.Mesh(this.ball.geometry, this.ballMat);
+      // a copy of the material: the one outside is tied to the cascaded shadows
+      const ball = new THREE.Mesh(this.ball.geometry, this.ballMat.clone());
       scene.add(ball);
       const key = new THREE.DirectionalLight(0xfff4e2, 2.6);
       key.position.set(-0.6, 1, 0.9);
@@ -582,22 +768,29 @@ export class World {
   // ------------------------------------------------------------------ inputs
   setWeather(w) {
     const c = Math.min(1, Math.max(0, w.cloud / 100));
-    if (Math.abs(c - this.cloud) < 1e-4 && this._weatherSet) return;
+    const humid = Math.min(1, Math.max(0, (w.humidity ?? 60) / 100));
+    if (Math.abs(c - this.cloud) < 1e-4 && Math.abs(humid - this.humid) < 1e-4 && this._weatherSet) return;
     this._weatherSet = true;
     this.cloud = c;
-    this.skyMat.uniforms.cloud.value = c;
+    this.humid = humid;
+    const U = this.skyMat.uniforms;
+    U.cloud.value = c;
+    U.turbidity.value = 2.2 + 9 * humid * humid; // damp air is hazy air
+    // how much of the sun gets through, and what colour it is when it does
     const direct = 1 - smooth(0.25, 1, c);
-    this.sun.intensity = 0.25 + 3.1 * direct;
-    this.sun.color.setHex(0xfff2dc).lerp(new THREE.Color(0xe8edf2), c);
-    this.hemi.intensity = 0.75 + 0.95 * c;
-    this.hemi.color.setHex(0xdfeaff).lerp(new THREE.Color(0xd9dde2), c);
-    this.sun.shadow.radius = 2 + 9 * c;
-    this.scene.fog.color.setHex(0xb7cde0).lerp(new THREE.Color(0xb4b9be), c);
-    this.scene.fog.near = 55 - 20 * c;
-    this.scene.fog.far = 620 - 300 * c;
-    this.renderer.toneMappingExposure = 1.0 - 0.12 * c;
-    this.blob.material.opacity = 0.62 - 0.3 * c;
-    setShadowStrength(0.34 - 0.16 * c);
+    const sun = this.sunColor.clone().lerp(new THREE.Color(0xe8edf2), c);
+    for (const l of this.csm.lights) { l.intensity = 0.06 + 2.05 * direct; l.color.copy(sun); }
+    // under cloud the sky is the only light there is, and the eye opens up to it
+    this.scene.environmentIntensity = 0.42 + 0.5 * c;
+    this.renderer.toneMappingExposure = 1.0;
+    const haze = new THREE.Color(0xbfd3e6).lerp(new THREE.Color(0xd6dde2), humid).lerp(new THREE.Color(0xa9aeb3), smooth(0.5, 1, c));
+    this.scene.fog.color.copy(haze).multiplyScalar(0.6 - 0.1 * c);
+    this.scene.fog.near = 110 - 50 * humid;
+    this.scene.fog.far = 2600 - 1500 * humid - 300 * c;
+    this.blob.material.opacity = 0.5 - 0.22 * c;
+    // The soft patch under each player stands in for the sky they block. In
+    // sunshine their real shadow does most of the work.
+    setShadowStrength(0.1 + 0.2 * c);
     if (this.inset) {
       this.inset.key.intensity = 0.9 + 1.9 * direct;
       this.inset.renderer.toneMappingExposure = 1.0 - 0.1 * c;
@@ -644,36 +837,64 @@ export class World {
 
   /** Show or hide the batter and a field of the given kind ('slips' or 'spread'). */
   setPeople(on, field) {
-    this.batter.group.visible = !!on;
+    this.people.on = !!on;
+    this.people.field = field;
+    if (!on) { this.people.batterPlan = null; this.people.fieldingPlan = null; this.people.chase = null; }
+    this._castPeople();
+  }
+
+  // bring who is on the ground into line with what was asked for
+  _castPeople() {
+    if (!this.batter) return;
+    const { on, field } = this.people;
+    for (const c of this.cast) c.group.visible = on;
     if (this.fielders && (!on || this.fieldKind !== field)) {
       this.scene.remove(this.fielders.group);
+      this.fielders.dispose();
       this.fielders = null;
     }
     if (on && !this.fielders) {
       this.fielders = new Fielders(field);
       this.fieldKind = field;
       this.scene.add(this.fielders.group);
+      this._adopt(this.fielders.group);
     }
-    if (!on) this.batter.setPlan(null);
+    this.batter.setPlan(this.people.batterPlan);
     this.batter.setFirstPerson(this.camName === 'batter');
+    if (this.fielders) this.fielders.setPlan(this.people.fieldingPlan, this.people.chase);
+    this._posePeople(this.lastT || 0);
   }
+
+  // everyone, at time t on the ball's clock (it leaves the hand at 0)
+  _posePeople(t) {
+    if (!this.hasPeople()) return;
+    const clock = this.time, ball = t > 0 ? this.ballAt : null;
+    this.batter.pose(t, clock);
+    this.bowler.pose(t, clock);
+    this.nonStriker.pose(t, clock);
+    this.umpires.pose(t, clock, ball);
+    if (this.fielders) this.fielders.pose(t, clock, ball);
+  }
+
+  /** True when the players are on the ground, and so the bowler has a run-up. */
+  hasPeople() { return !!(this.batter && this.people.on); }
 
   /**
    * Who goes for the ball, or null for nobody:
    * { id, start, time, point } with `point` in pitch axes, the ball arriving
    * there at `time` having passed or left the bat at `start`.
    */
-  setFieldingPlan(plan) {
-    if (!this.fielders) return;
-    this.fielders.setPlan(plan);
-    this.fielders.pose(0);
+  setFieldingPlan(plan, chase = null) {
+    this.people.fieldingPlan = plan;
+    this.people.chase = chase;
+    if (this.fielders) this.fielders.setPlan(plan, chase);
   }
 
   /** The stroke the batter will play, or null to stand in the stance. */
   setBatterPlan(plan) {
-    this.batter.setPlan(plan);
-    this.batter.pose(0);
+    this.people.batterPlan = plan;
     if (!plan) this.setFieldingPlan(null);
+    if (this.batter) this.batter.setPlan(plan);
   }
 
   // opts.stumpsTime: when the stumps are broken (null for never). Without it,
@@ -686,6 +907,8 @@ export class World {
     this._setLine(this.pathGround, this._positions(main, 0.014));
     this._setLine(this.pathRef, this._positions(sim.ref.samples));
     this.pathSamples = main;
+    this.release = main[0].p.slice();
+    if (this.bowler) this.bowler.setRelease(this.release);
 
     // strobe
     const m = new THREE.Matrix4();
@@ -729,11 +952,19 @@ export class World {
 
   showReference(on) { this.refWanted = on; }
 
-  /** Place the ball. state: { p, q, index, t } with p and q in physics axes. */
-  setBall(state) {
+  /**
+   * Place the ball. state: { p, q, index, t } with p and q in physics axes.
+   * `time` is the playhead when it is before the first sample: the bowler is
+   * still running in, and the ball is in the bowler's hand.
+   */
+  setBall(state, time = state.t) {
     const b = this.ball;
     const prev = b.position.clone();
-    toScene(state.p, b.position);
+    this.lastT = time;
+    this.ballAt = state.p;
+    this._posePeople(time);
+    const held = time < 0 && this.hasPeople();
+    toScene(held ? this.bowler.ball() : state.p, b.position);
     const X = dirToScene(rotate(state.q, [1, 0, 0]));
     const Y = dirToScene(rotate(state.q, [0, 1, 0]));
     const Z = dirToScene(rotate(state.q, [0, 0, 1]));
@@ -763,10 +994,6 @@ export class World {
       this.controls.target.copy(b.position);
     }
     this._knock(state.t);
-    if (this.batter.group.visible) {
-      this.batter.pose(state.t);
-      if (this.fielders) this.fielders.pose(state.t);
-    }
   }
 
   _knock(t) {
@@ -803,6 +1030,7 @@ export class World {
     const c = CAMS[name];
     this.camera.fov = c.fov;
     this.camera.updateProjectionMatrix();
+    this.csm.updateFrustums();
     if (name === 'ball') this._placeBallCam();
     else {
       this.camera.position.set(...c.pos);
@@ -811,25 +1039,66 @@ export class World {
     this.controls.update();
   }
 
+  // Pixels per CSS pixel: the display's own, up to two, and never so many that
+  // the buffers behind a large window outgrow a laptop's graphics memory.
+  _pixelRatio(w, h) {
+    const cap = this.tier === 'low' ? 1.25 : this.tier === 'medium' ? 1.5 : 2;
+    return Math.max(0.75, Math.min(window.devicePixelRatio || 1, cap, Math.sqrt(MAX_PIXELS / (w * h))));
+  }
+
   resize() {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     if (!w || !h) return;
+    const pr = this._pixelRatio(w, h);
+    this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
+    this.composer.setPixelRatio(pr);
+    this.composer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    const pr = this.renderer.getPixelRatio();
+    this.csm.updateFrustums();
     for (const m of this.lineMats) m.resolution.set(w * pr, h * pr);
   }
 
-  _bakeEnvironment() {
-    const old = this.scene.environment;
-    this.scene.environment = this.pmrem.fromScene(this.envScene, 0, 1, 2000).texture;
-    if (old) old.dispose();
-    if (this.inset) {
-      const o2 = this.inset.scene.environment;
-      this.inset.scene.environment = this.inset.pmrem.fromScene(this.envScene, 0, 1, 2000).texture;
-      if (o2) o2.dispose();
+  /** 'high', 'medium' or 'low'. */
+  setTier(tier) {
+    if (!TIERS.includes(tier) || tier === this.tier) return;
+    this.tier = tier;
+    this.ao.enabled = tier === 'high';
+    const size = tier === 'low' ? 1024 : 2048;
+    for (const l of this.csm.lights) {
+      if (l.shadow.mapSize.x === size) continue;
+      l.shadow.mapSize.set(size, size);
+      if (l.shadow.map) { l.shadow.map.dispose(); l.shadow.map = null; }
     }
+    this.csm.shadowMapSize = size;
+    this.csm.updateFrustums();
+    this.resize();
+  }
+
+  // Step down a tier when frames have been slow for a while. Never back up:
+  // a machine that struggled once will struggle again.
+  _govern(dt) {
+    if (this.pinned || this.tier === 'low' || document.hidden) return;
+    this.slow = dt > 1 / 28 ? this.slow + dt : Math.max(0, this.slow - dt * 2);
+    if (this.slow > 2.5) {
+      this.slow = 0;
+      this.setTier(this.tier === 'high' ? 'medium' : 'low');
+    }
+  }
+
+  _bakeEnvironment() {
+    // without the sun's disc: the sun is a light of its own
+    this.skyMat.uniforms.disc.value = 0;
+    const bake = (holder, pmrem, scene) => {
+      const old = holder.envTarget;
+      holder.envTarget = pmrem.fromScene(this.envScene, 0, 1, 2000);
+      scene.environment = holder.envTarget.texture;
+      if (old) old.dispose();
+    };
+    bake(this, this.pmrem, this.scene);
+    if (this.inset) bake(this.inset, this.inset.pmrem, this.inset.scene);
+    this.skyMat.uniforms.disc.value = 1;
     this._envDirty = false;
   }
 
@@ -844,8 +1113,21 @@ export class World {
     const wide = this.camName !== 'ball' && !!this.pathSamples;
     this.pathEdge.visible = this.pathFull.visible = this.pathDone.visible = this.strobe.visible = wide;
     this.pathRef.visible = wide && !!this.refWanted;
+    // the players breathe and shift between balls, so they are posed every frame
+    if (this.hasPeople() && !this.reducedMotion) {
+      this._posePeople(this.lastT || 0);
+      if ((this.lastT || 0) < 0) toScene(this.bowler.ball(), this.ball.position);
+    }
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+    this.csm.update();
+    this._govern(dt);
+    if (this.tier === 'low') this.renderer.render(this.scene, this.camera);
+    else {
+      // the scene always goes into the smooth-edged buffer
+      this.composer.readBuffer = this.composer.renderTarget2;
+      this.composer.writeBuffer = this.composer.renderTarget1;
+      this.composer.render(dt);
+    }
     if (this.inset) this.inset.renderer.render(this.inset.scene, this.inset.camera);
   }
 }
