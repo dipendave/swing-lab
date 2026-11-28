@@ -6,6 +6,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { BALL, PITCH } from './physics.js';
 import { BallSkin, ballGeometry } from './ballTexture.js';
+import { Batter, Fielders, setShadowStrength } from './figures.js';
 
 const HALF = PITCH.length / 2;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -340,6 +341,11 @@ export class World {
     this._buildBall();
     this._buildPaths();
     this._buildInset(ballCanvas);
+    // people appear only in challenge mode
+    this.batter = new Batter();
+    this.batter.group.visible = false;
+    this.scene.add(this.batter.group);
+    this.fielders = null;
     this.setCamera('broadcast');
     this._envDirty = true;
     this._lastEnv = -1;
@@ -591,6 +597,7 @@ export class World {
     this.scene.fog.far = 620 - 300 * c;
     this.renderer.toneMappingExposure = 1.0 - 0.12 * c;
     this.blob.material.opacity = 0.62 - 0.3 * c;
+    setShadowStrength(0.34 - 0.16 * c);
     if (this.inset) {
       this.inset.key.intensity = 0.9 + 1.9 * direct;
       this.inset.renderer.toneMappingExposure = 1.0 - 0.1 * c;
@@ -635,7 +642,43 @@ export class World {
     line.visible = true;
   }
 
-  setPaths(sim) {
+  /** Show or hide the batter and a field of the given kind ('slips' or 'spread'). */
+  setPeople(on, field) {
+    this.batter.group.visible = !!on;
+    if (this.fielders && (!on || this.fieldKind !== field)) {
+      this.scene.remove(this.fielders.group);
+      this.fielders = null;
+    }
+    if (on && !this.fielders) {
+      this.fielders = new Fielders(field);
+      this.fieldKind = field;
+      this.scene.add(this.fielders.group);
+    }
+    if (!on) this.batter.setPlan(null);
+    this.batter.setFirstPerson(this.camName === 'batter');
+  }
+
+  /**
+   * Who goes for the ball, or null for nobody:
+   * { id, start, time, point } with `point` in pitch axes, the ball arriving
+   * there at `time` having passed or left the bat at `start`.
+   */
+  setFieldingPlan(plan) {
+    if (!this.fielders) return;
+    this.fielders.setPlan(plan);
+    this.fielders.pose(0);
+  }
+
+  /** The stroke the batter will play, or null to stand in the stance. */
+  setBatterPlan(plan) {
+    this.batter.setPlan(plan);
+    this.batter.pose(0);
+    if (!plan) this.setFieldingPlan(null);
+  }
+
+  // opts.stumpsTime: when the stumps are broken (null for never). Without it,
+  // the stumps go when the simulated ball hits them.
+  setPaths(sim, opts) {
     const main = sim.main.samples;
     this._setLine(this.pathFull, this._positions(main));
     this._setLine(this.pathDone, this._positions(main));
@@ -669,8 +712,14 @@ export class World {
     const t = sim.aim.target;
     this.aimMark.position.set(-t[1], 0.015, HALF - t[0]);
     this.aimMark.visible = Math.abs(t[1]) < PITCH.halfWidth && t[0] < PITCH.length + PITCH.crease;
-    this.hit = sim.main.hitStumps ? sim.main.samples[sim.main.samples.length - 1].t : null;
-    this.hitDir = sim.main.hitStumps ? sim.main.samples[sim.main.samples.length - 1].v : null;
+    const lastSample = sim.main.samples[sim.main.samples.length - 1];
+    if (opts && 'stumpsTime' in opts) {
+      this.hit = opts.stumpsTime;
+      this.hitDir = opts.stumpsTime === null ? null : lastSample.v;
+    } else {
+      this.hit = sim.main.hitStumps ? lastSample.t : null;
+      this.hitDir = sim.main.hitStumps ? lastSample.v : null;
+    }
   }
 
   setPinned(sim) {
@@ -714,6 +763,10 @@ export class World {
       this.controls.target.copy(b.position);
     }
     this._knock(state.t);
+    if (this.batter.group.visible) {
+      this.batter.pose(state.t);
+      if (this.fielders) this.fielders.pose(state.t);
+    }
   }
 
   _knock(t) {
@@ -746,6 +799,7 @@ export class World {
 
   setCamera(name) {
     this.camName = name;
+    if (this.batter) this.batter.setFirstPerson(name === 'batter');
     const c = CAMS[name];
     this.camera.fov = c.fov;
     this.camera.updateProjectionMatrix();

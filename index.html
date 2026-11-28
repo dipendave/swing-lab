@@ -21,10 +21,13 @@
 </head>
 <body>
   <div class="app">
-    <aside class="panel controls" aria-label="Delivery settings">
+    <aside class="panel controls" aria-label="About and modes">
       <header class="masthead">
         <div class="masthead-top">
-          <h1>Swing Lab</h1>
+          <div class="brand">
+            <h1>Swing Lab</h1>
+            <span class="version" id="version">v1.1.0</span>
+          </div>
           <nav class="masthead-links" aria-label="About this project">
             <button type="button" class="link" id="open-notes">How the physics works</button>
             <a class="repo" href="https://github.com/dipendave/swing-lab" target="_blank" rel="noopener">Source on GitHub</a>
@@ -32,7 +35,22 @@
         </div>
         <p>Set the seam, the ball and the day. Watch what the air does.</p>
       </header>
-      <section class="about" aria-label="About Swing Lab">
+      <div class="mode" role="group" aria-label="Mode">
+        <button type="button" data-mode="free" aria-pressed="true">Free play</button>
+        <button type="button" data-mode="challenge" aria-pressed="false">Challenge</button>
+      </div>
+      <section class="challenge" id="challenge" aria-label="The challenge" hidden>
+        <h2 id="ch-title"></h2>
+        <p id="ch-story"></p>
+        <dl class="ch-facts" id="ch-facts"></dl>
+        <p class="ch-rules">You have six balls against a batter of medium ability. Wides and no-balls cost a run and are bowled again. Your aim is good, not perfect: each ball lands close to where you set it, not exactly on it.</p>
+        <div class="ch-actions">
+          <button type="button" class="ghost" id="ch-restart">Start the over again</button>
+          <button type="button" class="ghost" id="ch-next">Another challenge</button>
+        </div>
+        <p class="ch-tally" id="ch-tally"></p>
+      </section>
+      <section class="about" id="about-section" aria-label="About Swing Lab">
         <p>A fast bowler lets go of a ball that weighs about 160 grams, and for half a second nothing touches it. Yet it bends, late, sometimes by more than the width of the stumps. Bowlers were doing that long before anyone could explain it, and it is still one of the best things to watch in any sport.</p>
         <p>Swing Lab is a fun project, built to see how much of that magic falls out of real aerodynamics. Tilt the seam, scuff one side, change the weather, and watch the ball do what the greats made it do. It is a toy for anyone who has watched a replay and asked how the ball did that.</p>
         <details id="about">
@@ -53,7 +71,7 @@
         <label for="preset">Start from a delivery</label>
         <select id="preset"></select>
       </div>
-      <div id="controls"></div>
+      <div class="dock" id="hud-dock"></div>
       <footer class="panel-foot">
         <button type="button" class="link" id="reset">Reset everything</button>
         <button type="button" class="link" id="visit-counting" hidden>Visit counting</button>
@@ -62,33 +80,100 @@
 
     <main class="stage">
       <canvas id="view" aria-label="3D view of the delivery"></canvas>
-      <div class="stage-top">
-        <div class="cams" role="group" aria-label="Camera">
-          <button type="button" data-cam="broadcast" aria-pressed="true">Broadcast</button>
-          <button type="button" data-cam="umpire">Umpire</button>
-          <button type="button" data-cam="side">Side on</button>
-          <button type="button" data-cam="top">Overhead</button>
-          <button type="button" data-cam="batter">Batter</button>
-          <button type="button" data-cam="ball">Ball cam</button>
+      <div class="overlay">
+        <div class="ov-top">
+          <div class="top-row">
+          <div class="cams" role="group" aria-label="Camera">
+            <button type="button" data-cam="broadcast" aria-pressed="true">Broadcast</button>
+            <button type="button" data-cam="umpire">Umpire</button>
+            <button type="button" data-cam="side">Side on</button>
+            <button type="button" data-cam="top">Overhead</button>
+            <button type="button" data-cam="batter">Batter</button>
+            <button type="button" data-cam="ball">Ball cam</button>
+          </div>
+          <button type="button" class="ghost solid" id="fold" aria-pressed="false">Hide controls</button>
+          </div>
+          <div class="scorebar" id="scorebar" hidden>
+            <strong id="sb-stand"></strong>
+            <span id="sb-wk"></span>
+            <ol id="sb-balls" aria-label="This over, ball by ball"></ol>
+          </div>
         </div>
-        <div class="live" id="live" aria-live="off"></div>
+
+        <div class="ov-left" id="slot-left">
+          <details class="hud" id="hud-ball" open>
+            <summary><span>Ball and seam</span><span class="gist" id="gist-ball"></span></summary>
+            <div class="hud-body">
+              <div class="ball-stage">
+                <canvas id="ball-view" width="504" height="300" tabindex="0" aria-label="The ball, seen from behind along its line of flight. Drag it, or use the arrow keys, to turn the seam."></canvas>
+                <div class="live" id="live" aria-live="off"></div>
+              </div>
+              <p class="ball-cap"><span>Off side</span><span id="ball-tip">Drag to turn the seam</span><span>Leg side</span></p>
+              <div class="ctl-grid" id="ctl-ball"></div>
+              <div class="tools">
+                <select id="chips-ball" aria-label="Set how old the ball is"></select>
+                <button type="button" class="ghost" id="swap">Swap sides</button>
+              </div>
+              <div class="ctl-grid" id="ctl-seam"></div>
+              <p class="hint" id="hint-ball"></p>
+            </div>
+          </details>
+        </div>
+
+        <div class="ov-right" id="slot-right">
+          <div class="hud-stack" id="hud-conditions">
+            <details class="hud" id="hud-weather" open>
+              <summary><span>Weather</span><span class="gist" id="gist-weather"></span></summary>
+              <div class="hud-body">
+                <select id="chips-weather" aria-label="Start from a kind of day"></select>
+                <div class="ctl-grid" id="ctl-weather"></div>
+                <p class="hint" id="hint-weather"></p>
+              </div>
+            </details>
+            <details class="hud" id="hud-pitch" open>
+              <summary><span>Pitch</span><span class="gist" id="gist-pitch"></span></summary>
+              <div class="hud-body">
+                <select id="chips-pitch" aria-label="Start from a kind of pitch"></select>
+                <div class="ctl-grid" id="ctl-pitch"></div>
+                <p class="hint" id="hint-pitch"></p>
+              </div>
+            </details>
+          </div>
+          <details class="hud" id="hud-delivery" open>
+            <summary><span>Delivery</span><span class="gist" id="gist-delivery"></span></summary>
+            <div class="hud-body">
+              <div class="ctl-grid" id="ctl-delivery"></div>
+              <p class="hint" id="hint-delivery"></p>
+            </div>
+          </details>
+        </div>
+
+        <div class="transport">
+          <button type="button" id="bowl" class="primary">Bowl</button>
+          <label class="rate">
+            <span class="sr">Playback speed</span>
+            <select id="rate">
+              <option value="1">Real time</option>
+              <option value="0.25" selected>1/4 speed</option>
+              <option value="0.1">1/10 speed</option>
+              <option value="0.025">1/40 speed</option>
+            </select>
+          </label>
+          <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position in the flight">
+          <span id="clock" class="clock">0.000 s</span>
+          <label class="check"><input type="checkbox" id="show-ref" checked> No-swing path</label>
+          <button type="button" id="pin" class="ghost">Pin this path</button>
+        </div>
       </div>
-      <div class="transport">
-        <button type="button" id="bowl" class="primary">Bowl</button>
-        <label class="rate">
-          <span class="sr">Playback speed</span>
-          <select id="rate">
-            <option value="1">Real time</option>
-            <option value="0.25" selected>1/4 speed</option>
-            <option value="0.1">1/10 speed</option>
-            <option value="0.025">1/40 speed</option>
-          </select>
-        </label>
-        <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position in the flight">
-        <span id="clock" class="clock">0.000 s</span>
-        <label class="check"><input type="checkbox" id="show-ref" checked> No-swing path</label>
-        <button type="button" id="pin" class="ghost">Pin this path</button>
-      </div>
+      <div class="flash" id="flash" aria-live="assertive" hidden></div>
+      <section class="result" id="result" aria-live="polite" hidden>
+        <h2 id="res-title"></h2>
+        <p id="res-text"></p>
+        <div class="result-actions">
+          <button type="button" class="primary" id="res-next">Next challenge</button>
+          <button type="button" class="ghost" id="res-again">Bowl this over again</button>
+        </div>
+      </section>
       <p class="fallback" id="fallback" hidden></p>
     </main>
 
@@ -100,17 +185,11 @@
       <dl class="stats" id="stats"></dl>
 
       <section class="card">
-        <h3>The ball right now</h3>
-        <p class="card-note" id="ball-note">Seen from behind, looking along its line of flight.</p>
-        <canvas id="ball-view" width="520" height="360" aria-label="Close view of the ball and its seam"></canvas>
-      </section>
-
-      <section class="card">
         <h3>Air around the ball, from above</h3>
         <div id="flow"></div>
         <ul class="legend">
-          <li><span class="key lam"></span>Smooth (laminar) layer</li>
-          <li><span class="key turb"></span>Turbulent layer</li>
+          <li><span class="key lam"></span>Smooth (laminar)</li>
+          <li><span class="key turb"></span>Turbulent</li>
         </ul>
         <p class="card-note" id="flow-note"></p>
       </section>
@@ -148,8 +227,13 @@
       <p>Humid air is slightly thinner than dry air, so humidity alone does almost nothing; that matches wind-tunnel work. Temperature and altitude change air density and viscosity, which shifts the speed at which swing reverses. Cloud is modelled the way James, MacDonald and Hart suggested in 2012: sunshine on the outfield stirs up small-scale turbulence that disturbs the laminar side, and cloud calms it. That last effect is a hypothesis, so it is kept small.</p>
       <h3>What it is calibrated to</h3>
       <p>Peak side force about 0.3 of the dynamic pressure on the ball's cross-section at around 108 km/h with a 20° seam (Bentley and others 1982, Mehta 2005). A new ball reversing only above roughly 140 km/h. Contrast swing changing direction near 115 km/h. Drag near 0.5 at low speed.</p>
+      <h3>The batter, in challenge mode</h3>
+      <p>The batter is not a dice roll. They read the length early and choose where to meet the ball, then commit about a fifth of a second before it arrives. From that instant they expect it to carry on as it is going: part of the swing they have already seen, and a plain bounce. The bat goes where that expectation says, pulled a little toward the truth if there is time after the ball pitches, and blurred by ordinary human error. Then the real ball arrives where the physics puts it.</p>
+      <p>The gap between ball and bat decides the rest: middle, edge or miss, and which edge. So late swing finds the edge, a good length beats the bat because the ball pitches after the batter has committed, and a short ball is easier to line up. Bowled, caught and leg before wicket follow from where the ball actually went, and leg before follows the law: not out if it pitched outside leg stump, or struck the pad outside the line with a shot offered.</p>
+      <p>What is judged, not simulated: how many runs a clean hit is worth, and whether an edge carries and is held. Those are drawn from tables that depend on the stroke and the field. There is no running between the wickets, so no run-outs, and no byes or leg byes.</p>
+      <p>The players are built and posed by formula. The bat is put where the stroke needs it, the hands stay on the handle, and the body leans and steps to reach, without any bone changing length. They are not motion-captured, and there is no bowler, non-striker or umpire on the field.</p>
       <h3>What it leaves out</h3>
-      <p>No batter. No aerodynamic torque on the seam, so the wobble you set is the wobble you get. No moisture on the ball itself. Pitch behaviour is a reasoned mapping from hardness, grass, moisture and wear onto bounce and friction, not a measurement of any particular ground.</p>
+      <p>No aerodynamic torque on the seam, so the wobble you set is the wobble you get. No moisture on the ball itself. Pitch behaviour is a reasoned mapping from hardness, grass, moisture and wear onto bounce and friction, not a measurement of any particular ground.</p>
     </article>
   </dialog>
 

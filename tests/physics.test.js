@@ -211,3 +211,17 @@ test('determinism: same seed, same delivery', () => {
   assert.equal(a.pitched.deviation, b.pitched.deviation);
   assert.notEqual(a.pitched.deviation, c2.pitched.deviation);
 });
+
+test('flight: the crease and stumps crossings are recorded even when the ball pitches right there', () => {
+  // sweep yorker lengths finely so some deliveries land in the same step as each crossing
+  let missingCrease = 0, missingStumps = 0, n = 0;
+  for (let length = 0; length <= 1.6; length += 0.02) {
+    const r = simulate(cfgWith((c) => { c.delivery.length = length; c.delivery.speedKmh = 140; c.delivery.line = 60; c.seam.angle = 0; }));
+    n++;
+    if (!r.main.crease) missingCrease++;
+    if (!r.main.stumps) missingStumps++;
+  }
+  assert.ok(n > 70);
+  assert.equal(missingCrease, 0, 'every ball that passes the batter has a crease crossing');
+  assert.equal(missingStumps, 0, 'every ball that passes the stumps has a stumps crossing');
+});

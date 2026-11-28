@@ -604,7 +604,7 @@ function fly(init, env, ball, pitch, mode) {
       samples.push({
         t, p: p.slice(), v: v.slice(), q: q.slice(),
         speed: len(v), airspeed: U, cd: ac.cd, cs: ac.sideLeft, csUp: ac.sideUp,
-        cl, Re: ac.Re, spin: len(w) / (2 * Math.PI),
+        cl, Re: ac.Re, spin: len(w) / (2 * Math.PI), w: w.slice(),
       });
     }
     // midpoint step with the coefficients frozen over the step
@@ -649,7 +649,7 @@ function fly(init, env, ball, pitch, mode) {
       if (record) {
         samples.push({
           t: tc, p: pc.slice(), v: vc.slice(), q: qc.slice(), speed: len(vc), airspeed: U,
-          cd: ac.cd, cs: ac.sideLeft, csUp: ac.sideUp, cl, Re: ac.Re, spin: len(w) / (2 * Math.PI), bounce: true,
+          cd: ac.cd, cs: ac.sideLeft, csUp: ac.sideUp, cl, Re: ac.Re, spin: len(w) / (2 * Math.PI), w: w.slice(), bounce: true,
         });
       }
       if (stopAtBounce) return { samples, bounces };
@@ -658,8 +658,10 @@ function fly(init, env, ball, pitch, mode) {
       vn = [b.v[0], b.v[1], b.v[2] - G * rest];
       pn = [pc[0] + b.v[0] * rest, pc[1] + b.v[1] * rest, Math.max(R, pc[2] + b.v[2] * rest)];
       qn = quatIntegrate(qc, w, rest);
-      // crossings during the remainder of this step are rare enough to skip
-    } else {
+    }
+    // Did the ball pass the batter's crease or the stumps during this step?
+    // Checked on every step, including one in which the ball also pitched.
+    {
       if (!crease) {
         const c = crossing(PITCH.length - PITCH.crease);
         if (c) crease = c;
@@ -675,7 +677,7 @@ function fly(init, env, ball, pitch, mode) {
             if (record) {
               samples.push({
                 t: c.t, p: [PITCH.length, c.y, c.z], v: c.v, q: qn.slice(), speed: len(c.v), airspeed: U,
-                cd: ac.cd, cs: ac.sideLeft, csUp: ac.sideUp, cl, Re: ac.Re, spin: len(w) / (2 * Math.PI),
+                cd: ac.cd, cs: ac.sideLeft, csUp: ac.sideUp, cl, Re: ac.Re, spin: len(w) / (2 * Math.PI), w: w.slice(),
               });
             }
             break;
@@ -689,7 +691,7 @@ function fly(init, env, ball, pitch, mode) {
       if (record) {
         samples.push({
           t, p: p.slice(), v: v.slice(), q: q.slice(), speed: len(v), airspeed: len(sub(v, env.wind)),
-          cd: ac.cd, cs: ac.sideLeft, csUp: ac.sideUp, cl, Re: ac.Re, spin: len(w) / (2 * Math.PI),
+          cd: ac.cd, cs: ac.sideLeft, csUp: ac.sideUp, cl, Re: ac.Re, spin: len(w) / (2 * Math.PI), w: w.slice(),
         });
       }
       break;
@@ -866,6 +868,26 @@ export function flowSnapshot(cfg, sample) {
     criticalSpeedOff: (ball.reCritA * env.nu) / BALL.diameter / (1 + AERO.turbulenceGain * env.Tu),
     criticalSpeedLeg: (ball.reCritB * env.nu) / BALL.diameter / (1 + AERO.turbulenceGain * env.Tu),
   };
+}
+
+/**
+ * The flight a watcher would expect from one instant onward if nothing more
+ * happened to the ball sideways: same drag, lift and gravity, no further side
+ * force, and a plain bounce with no help from the seam or the cracks. `sample`
+ * is one recorded instant of a simulated delivery. Used by the batter model:
+ * the gap between this and what the ball really does is what beats the bat.
+ */
+export function expectedPath(cfg, sample) {
+  const env = makeEnvironment(cfg.weather);
+  const ball = makeBall({ ...cfg.ball, seamCondition: cfg.seam.condition });
+  const pitch = makePitch(cfg.pitch);
+  const r = fly({ p: sample.p, v: sample.v, q: sample.q, omega: sample.w }, env, ball, pitch, { side: false });
+  const t0 = sample.t;
+  for (const smp of r.samples) smp.t += t0;
+  for (const b of r.bounces) b.t += t0;
+  if (r.stumps) r.stumps.t += t0;
+  if (r.crease) r.crease.t += t0;
+  return r;
 }
 
 export const DEFAULTS = {
