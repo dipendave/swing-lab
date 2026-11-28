@@ -2,6 +2,7 @@
 import { simulate, swingCurve, flowSnapshot, lengthName, DEFAULTS, BALL, PITCH } from './physics.js';
 import { World } from './scene.js';
 import { FlowDiagram, SwingCurve } from './panels.js';
+import { initAnalytics, track } from './analytics.js';
 
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -221,6 +222,7 @@ function buildControls() {
     $('pin').textContent = 'Pin this path';
     changed('all');
     bowl(false);
+    track('preset_loaded', { preset_name: PRESETS[Number(sel.value)][0] });
   });
 }
 
@@ -496,7 +498,12 @@ function frame(now) {
 
 // -------------------------------------------------------------------- events
 buildControls();
-$('bowl').addEventListener('click', () => bowl(true));
+// a delivery the visitor chose to bowl (not the one that plays on page load)
+function bowlByHand() {
+  bowl(true);
+  track('delivery_bowled', { speed_kmh: state.cfg.delivery.speedKmh, swing_type: state.sim ? regimeOfFlight() : 'unknown' });
+}
+$('bowl').addEventListener('click', bowlByHand);
 $('rate').addEventListener('change', (e) => { state.rate = Number(e.target.value); });
 $('scrub').addEventListener('input', (e) => {
   state.playing = false;
@@ -551,9 +558,11 @@ window.addEventListener('keydown', (e) => {
   const typing = tag === 'BUTTON' || tag === 'SELECT' || tag === 'SUMMARY' || (tag === 'INPUT' && e.target.type !== 'range');
   if (e.code === 'Space' && !typing && !$('notes').open) {
     e.preventDefault();
-    bowl(true);
+    bowlByHand();
   }
 });
+
+initAnalytics({ settingsLink: $('visit-counting') });
 
 // expose for debugging and automated checks
 window.swingLab = { state, world, simulate, bowl };

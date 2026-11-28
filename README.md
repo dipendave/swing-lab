@@ -14,7 +14,7 @@ Then open http://localhost:5173. There is nothing to install or build: the site 
 npm test
 ```
 
-runs 28 checks of the physics engine against published behaviour of real cricket balls.
+runs 38 checks: 28 of the physics engine against published behaviour of real cricket balls, and 10 of the visit-counting consent rules.
 
 ## How the physics works
 
@@ -46,6 +46,18 @@ runs 28 checks of the physics engine against published behaviour of real cricket
 - The pitch sliders map onto bounce and friction by reasoned estimate, not by measurement of a particular ground.
 - The model is calibrated to published wind-tunnel results, not fitted to ball-tracking data.
 
+## Visit counting
+
+The site can count visits and a little usage with Google Analytics 4. It is off until `MEASUREMENT_ID` in `src/analytics.js` is set to the `G-...` id of a GA4 web data stream; while that is empty nothing is loaded and no notice is shown.
+
+- Visitors in the EU, the wider EEA, the UK and Switzerland (judged by browser time zone) are asked first, and nothing is requested from Google until they agree.
+- Visitors elsewhere are counted straight away, told once, and can turn it off.
+- A browser sending Global Privacy Control is treated as a no.
+- The choice is remembered and can be changed from the "Visit counting" link under the controls.
+- Advertising features are off in every case.
+
+Two events are sent besides page views: `delivery_bowled` (with `speed_kmh` and `swing_type`) and `preset_loaded` (with `preset_name`). To see those details in GA4 reports, register them as event-scoped custom dimensions under Admin, Custom definitions.
+
 ## Files
 
 - `src/physics.js` – atmosphere, strip aerodynamics, flight, bounce, aim solver
@@ -53,6 +65,7 @@ runs 28 checks of the physics engine against published behaviour of real cricket
 - `src/ballTexture.js` – procedural leather, seam and wear
 - `src/panels.js` – airflow diagram and side-force chart
 - `src/main.js` – controls, presets, playback
-- `tests/physics.test.js` – physics checks
+- `src/analytics.js`, `src/consent.js` – visit counting and who is asked first
+- `tests/physics.test.js`, `tests/consent.test.js` – physics and consent checks
 - `serve.mjs` – static file server for local use
 - `vendor/three` – the Three.js files the page loads

@@ -357,6 +357,22 @@ details.numbers table { border-collapse: collapse; margin-top: 6px; width: 100%;
 details.numbers th { text-align: left; font-weight: 600; color: var(--ink-2); }
 details.numbers th, details.numbers td { padding: 3px 0; border-bottom: 1px solid var(--rule); }
 
+/* ---------------------------------------------------------- visit counting */
+.consent {
+  position: fixed;
+  left: 12px; bottom: 12px;
+  width: calc(var(--col) - 24px);
+  z-index: 20;
+  background: var(--screen);
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 28px rgba(18, 48, 31, .28);
+}
+.consent p { margin: 0 0 12px; font-size: 13.5px; line-height: 1.45; text-wrap: pretty; }
+.consent-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.consent-actions button { font-weight: 600; }
+
 /* ----------------------------------------------------------------- dialog */
 dialog#notes {
   border: 1px solid var(--ink);
@@ -390,6 +406,7 @@ dialog#notes p { margin: 8px 0 0; max-width: 66ch; font-size: 15px; line-height:
   .stage { order: -1; flex: none; height: 54vh; min-height: 340px; position: sticky; top: 0; z-index: 2; border-bottom: 1px solid var(--ink); }
   .transport { flex-wrap: wrap; gap: 8px 10px; }
   .transport #scrub { order: 5; flex-basis: 100%; }
+  .consent { left: 12px; right: 12px; width: auto; }
   .panel { overflow: visible; border: 0; }
   .cams button { padding: 6px 8px; font-size: 13px; }
   .live { display: none; }
