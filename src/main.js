@@ -162,6 +162,12 @@ const startTime = () => (state.mode === 'challenge' && world && world.hasPeople(
 const shownSim = () => (state.play ? state.play.sim : state.sim);
 const shownCfg = () => (state.play ? state.play.cfg : state.cfg);
 const shownSamples = () => (state.play ? state.play.samples : state.sim.main.samples);
+// What the readout describes. A challenge ball does not land quite where it
+// was aimed, and where it did land is part of the suspense: until it reaches
+// the batter the readout stays on the ball as it was aimed.
+const awaited = () => !!state.play && !state.play.revealed;
+const readSim = () => (awaited() ? state.sim : shownSim());
+const readCfg = () => (awaited() ? state.cfg : shownCfg());
 
 let world = null;
 try {
@@ -491,13 +497,13 @@ function curveNote(curve, cfg) {
 }
 
 function writeVerdict() {
-  const m = shownSim().metrics;
-  const cfg = shownCfg();
+  const m = readSim().metrics;
+  const cfg = readCfg();
   let shape;
   if (Math.abs(m.swing) < 0.025) shape = 'Straight through the air';
   else {
     const base = m.swing > 0 ? 'outswinger' : 'inswinger';
-    shape = regimeOfFlight() === 'reverse swing' ? `Reverse ${base}` : base[0].toUpperCase() + base.slice(1);
+    shape = regimeOfFlight(readSim(), cfg) === 'reverse swing' ? `Reverse ${base}` : base[0].toUpperCase() + base.slice(1);
   }
   // Each of the four verdict lines is written to fit on one line, so the block
   // never changes height as the wording changes.
@@ -548,7 +554,7 @@ function writeVerdict() {
   add('Pace', m.pitched ? `${Math.round(m.releaseSpeed)} to ${Math.round(m.pitched.speedOut)} to ${s ? Math.round(s.speed) : '?'}` : `${Math.round(m.releaseSpeed)} to ${s ? Math.round(s.speed) : '?'}`,
     m.pitched ? 'km/h at release, off the pitch, at stumps' : 'km/h at release, at stumps', true);
   add('Reaches the batter in', m.atCrease ? `${m.atCrease.t.toFixed(2)} s` : 'n/a', '');
-  add('Drag coefficient', shownSim().main.samples[0].cd.toFixed(2), 'at release');
+  add('Drag coefficient', readSim().main.samples[0].cd.toFixed(2), 'at release');
 
   const dl = $('stats');
   dl.replaceChildren();
@@ -566,13 +572,12 @@ function writeVerdict() {
 }
 
 // which way the air pushed the ball for most of the flight before pitching
-function regimeOfFlight() {
-  const sim = shownSim();
+function regimeOfFlight(sim = shownSim(), cfg = shownCfg()) {
   const end = sim.main.bounces[0] ? sim.main.bounces[0].index : sim.main.samples.length;
   let acc = 0;
   for (let i = 0; i < end; i++) acc += sim.main.samples[i].cs;
   const mean = acc / Math.max(1, end);
-  return regimeOf(mean, shownCfg().seam.wobble < 40 ? shownCfg().seam.angle : 0);
+  return regimeOf(mean, cfg.seam.wobble < 40 ? cfg.seam.angle : 0);
 }
 
 // ------------------------------------------------------------------ playback
@@ -720,7 +725,7 @@ function bowlChallenge() {
   const sim = simulate(cfg);
   const outcome = faceBall(sim, cfg, situation(over), rng);
   const flight = flightAfter(sim, outcome, over.scenario.field, rng);
-  state.play = { sim, cfg, outcome, ...flight, committed: false };
+  state.play = { sim, cfg, outcome, ...flight, committed: false, revealed: false };
   state.duration = flight.endTime;
   state.t = startTime();
   state.playing = true;
@@ -728,7 +733,8 @@ function bowlChallenge() {
   if (world) {
     world.setPaths(
       { main: { samples: flight.samples, bounces: sim.main.bounces, hitStumps: flight.stumpsTime !== null }, ref: sim.ref, aim: state.sim.aim },
-      { stumpsTime: flight.stumpsTime },
+      // what happens at the batter's end stays out of sight until the ball is there
+      { stumpsTime: flight.stumpsTime, hideAfter: flight.contactTime },
     );
     const spec = SHOTS[outcome.shot] || SHOTS.leave;
     world.setBatterPlan({
@@ -749,11 +755,22 @@ function bowlChallenge() {
   track('delivery_bowled', { speed_kmh: state.cfg.delivery.speedKmh, swing_type: regimeOfFlight() });
 }
 
+// The ball has reached the batter: show where it went from there, and let the
+// readout describe the ball that was really bowled.
+function revealBall() {
+  const pl = state.play;
+  if (!pl || pl.revealed) return;
+  pl.revealed = true;
+  if (world) world.revealPath();
+  writeVerdict();
+}
+
 // The ball is dead: put it in the book.
 function commitBall() {
   const pl = state.play;
   if (!pl || pl.committed) return;
   pl.committed = true;
+  revealBall();
   recordBall(state.over, pl.outcome);
   writeVerdict();
   renderScore();
@@ -860,6 +877,7 @@ function advance(dt) {
     const k = Math.min(1, Math.max(0, (state.t + 0.34) / 0.22));
     const runIn = 1 + (state.rate - 1) * k * k * (3 - 2 * k);
     state.t += dt * (state.t < 0 ? runIn : afterBat ? Math.max(state.rate, 0.7) : state.rate);
+    if (state.play && state.t >= state.play.contactTime) revealBall();
     if (state.t >= state.duration) {
       state.t = state.duration;
       state.playing = false;
@@ -986,6 +1004,7 @@ installHook({
   state: () => ({
     mode: state.mode, t: state.t, duration: state.duration, playing: state.playing, rate: state.rate,
     seed: state.cfg.seed, cfg: JSON.parse(JSON.stringify(state.cfg)),
+    ball: state.play ? { contactTime: state.play.contactTime, revealed: state.play.revealed, committed: state.play.committed } : null,
     over: state.over ? { scenario: state.over.scenario.title, balls: state.over.balls, runs: state.over.runs, wickets: state.over.wickets, done: state.over.done, result: state.over.result } : null,
   }),
   advance,

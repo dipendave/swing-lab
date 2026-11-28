@@ -899,6 +899,9 @@ export class World {
 
   // opts.stumpsTime: when the stumps are broken (null for never). Without it,
   // the stumps go when the simulated ball hits them.
+  // opts.hideAfter: a time on the ball's clock. The path beyond it is not
+  // drawn until revealPath() is called, so that what the batter does with the
+  // ball is not given away before the ball gets there.
   setPaths(sim, opts) {
     const main = sim.main.samples;
     this._setLine(this.pathFull, this._positions(main));
@@ -924,6 +927,14 @@ export class World {
     }
     this.strobe.count = n;
     this.strobe.instanceMatrix.needsUpdate = true;
+    this.strobeAll = n;
+    if (opts && opts.hideAfter !== undefined && opts.hideAfter !== null) {
+      // whole segments and strobe positions that end at or before the cut
+      let segs = 0;
+      while (segs < main.length - 1 && main[segs + 1].t <= opts.hideAfter) segs++;
+      for (const line of [this.pathFull, this.pathEdge, this.pathGround]) line.geometry.instanceCount = segs;
+      this.strobe.count = Math.min(n, Math.floor(opts.hideAfter / 0.05 + 1e-9));
+    }
 
     const b = sim.main.bounces[0];
     if (b && b.p[0] < PITCH.length + 1.2) {
@@ -943,6 +954,13 @@ export class World {
       this.hit = sim.main.hitStumps ? lastSample.t : null;
       this.hitDir = sim.main.hitStumps ? lastSample.v : null;
     }
+  }
+
+  /** Draw the whole of the path again after setPaths() was asked to hide part of it. */
+  revealPath() {
+    const all = this.pathSamples ? this.pathSamples.length - 1 : 0;
+    for (const line of [this.pathFull, this.pathEdge, this.pathGround]) line.geometry.instanceCount = all;
+    this.strobe.count = this.strobeAll || 0;
   }
 
   setPinned(sim) {
