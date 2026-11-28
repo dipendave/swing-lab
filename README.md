@@ -18,7 +18,7 @@ npm test
 
 runs 85 checks: 29 of the physics engine against published behaviour of real cricket balls, 26 of the batter, the laws and the over, 15 of how the players move, 4 of the player model file, 10 of the visit-counting consent rules, and one that the version shown under the title matches `package.json`.
 
-Add `?gfx=high`, `?gfx=medium` or `?gfx=low` to the address to pin the graphics quality, which otherwise starts high and steps down by itself on a machine that cannot keep up. `?debug` puts the scene on `window.swinglab` for looking around from the console.
+Add `?gfx=high`, `?gfx=medium` or `?gfx=low` to the address to pin the graphics quality, which otherwise starts high and steps down by itself on a machine that cannot keep up. `?debug` puts the scene on `window.swinglab` for looking around from the console. `window.game` (`src/hook.js`) lets a script drive the game: `scene`, `state`, `press('Space')` to bowl, the arrow codes to turn the seam, and `step(n)` to run n sixtieths of a second. `?manual=1` stops the loop so only `step` moves it, and `?seed=7` fixes the challenge's dice for a repeatable run.
 
 The version is written in two places, `package.json` and the `#version` label in `index.html`. Change both together.
 
@@ -89,6 +89,7 @@ Four events are sent besides page views: `delivery_bowled` (with `speed_kmh` and
 - `assets/figure` – the player model: meshes, joints and textures (CC0, from MakeHuman)
 - `tools/build_figure.py` – builds `assets/figure` from MakeHuman's files
 - `tools/vendor.mjs` – copies the Three.js files the page loads into `vendor/three`
+- `src/hook.js` – `window.game`, the hook scripted checks drive
 - `src/analytics.js`, `src/consent.js` – visit counting and who is asked first
 - `tests/physics.test.js`, `tests/challenge.test.js`, `tests/pose.test.js`, `tests/figure.test.js`, `tests/consent.test.js`, `tests/site.test.js` – physics, batter and rules, players' movement, the player model, consent and version checks
 - `serve.mjs` – static file server for local use

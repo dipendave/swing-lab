@@ -7,6 +7,7 @@ import { faceBall, SHOTS } from './batter.js';
 import { SCENARIOS, applyScenario, newOver, situation, recordBall, standing, deliver, mulberry32 } from './challenge.js';
 import { flightAfter } from './field.js';
 import { RUNUP } from './pose.js';
+import { install as installHook, manual, seedFrom } from './hook.js';
 
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -676,7 +677,7 @@ function startChallenge(index) {
   const sc = SCENARIOS[state.scenarioIndex];
   state.mode = 'challenge';
   state.over = newOver(sc);
-  state.rng = mulberry32((Date.now() ^ (state.scenarioIndex * 2654435761)) >>> 0);
+  state.rng = mulberry32((seedFrom(Date.now()) ^ (state.scenarioIndex * 2654435761)) >>> 0);
   state.play = null;
   state.cfg = applyScenario(state.cfg, sc);
   // the weather and the pitch are fixed, so they fold away while the challenge lasts
@@ -839,10 +840,8 @@ function flowNote(snap, regime) {
 }
 
 // ---------------------------------------------------------------------- loop
-let last = performance.now();
-function frame(now) {
-  const dt = Math.min(0.1, (now - last) / 1000);
-  last = now;
+// Run the game by dt seconds. Drawing is separate, so a check can step without it.
+function advance(dt) {
   let force = false;
   if (state.dirty.sim) {
     recompute();
@@ -872,6 +871,13 @@ function frame(now) {
     force = true;
   }
   if (force || state.needsFrame) { updateFrame(force); state.needsFrame = false; }
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  advance(dt);
   if (world) world.render(dt);
   requestAnimationFrame(frame);
 }
@@ -973,4 +979,17 @@ window.swingLab = { state, world, simulate, bowl, startChallenge, leaveChallenge
 
 state.rate = Number($('rate').value);
 if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) bowl(false);
-requestAnimationFrame(frame);
+
+// the game-state hook, window.game (see hook.js)
+installHook({
+  scene: () => state.mode,
+  state: () => ({
+    mode: state.mode, t: state.t, duration: state.duration, playing: state.playing, rate: state.rate,
+    seed: state.cfg.seed, cfg: JSON.parse(JSON.stringify(state.cfg)),
+    over: state.over ? { scenario: state.over.scenario.title, balls: state.over.balls, runs: state.over.runs, wickets: state.over.wickets, done: state.over.done, result: state.over.result } : null,
+  }),
+  advance,
+  draw: (dt) => { if (world) world.render(dt); },
+  target: (code) => (code === 'Space' ? document.body : $('ball-view')),
+});
+if (!manual) requestAnimationFrame(frame);
